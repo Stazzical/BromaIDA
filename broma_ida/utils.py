@@ -1,5 +1,5 @@
+from typing import Callable, NoReturn
 from functools import cache
-from typing import NoReturn
 
 from idaapi import (
     get_imagebase, decompile,
@@ -18,6 +18,13 @@ from ida_typeinf import (
     tinfo_t as ida_tinfo_t
 )
 from ida_nalt import get_tinfo, retrieve_input_file_md5
+from ida_dirtree import (
+    get_std_dirtree,
+    dirtree_visitor_t as ida_dirtree_visitor_t,
+    dirtree_cursor_t as ida_dirtree_cursor_t,
+    direntry_t as ida_direntry_t,
+    dirtree_t as ida_dirtree_t
+)
 
 from struct import unpack
 from pathlib import Path
@@ -35,9 +42,13 @@ except ModuleNotFoundError:
     pass
 
 
+TreeType = int | ida_dirtree_t
+DirtreeEntry = tuple[ida_direntry_t, str]
+
+
 def stop(reason: str | None = None) -> NoReturn:
     """Nuh Uh"""
-    raise Exception() if reason is None else Exception(reason)
+    raise SystemExit if reason is None else Exception(reason)
 
 
 def path_exists(path: str, ext: str = "") -> bool:
@@ -83,6 +94,73 @@ class IDAUtils:
         "android32": "Android (32 bit)",
         "android64": "Android (64 bit)"
     }
+
+    class DirtreeCollector(ida_dirtree_visitor_t):
+        def __init__(self, tree: TreeType, path: str, top: bool = True):
+            ida_dirtree_visitor_t.__init__(self)
+
+            self.tree = get_std_dirtree(tree) \
+                if isinstance(tree, int) else tree
+            self.path = Path(path)
+            self.entries: list[DirtreeEntry] = []
+            self.top = top
+
+            self.tree.traverse(self)
+
+        def descendant_check(self, entry_path: str) -> bool:
+            return bool(Path(entry_path).relative_to(self.path)) \
+                if not self.top else Path(entry_path).parent == self.path
+
+        def visit(self, c: ida_dirtree_cursor_t, de: ida_direntry_t) -> int:
+            try:
+                entry_path = IDAUtils.get_entry_abspath(self.tree, de)
+
+                if de.valid() and entry_path != self.path.as_posix() and \
+                        self.descendant_check(entry_path):
+                    self.entries.append((de, entry_path))
+            except ValueError:
+                pass
+
+            return 0
+
+    class DirtreeExecutor(ida_dirtree_visitor_t):
+        def __init__(
+                self,
+                tree: TreeType,
+                predicate: Callable[[ida_direntry_t, str], bool],
+                func: Callable[[ida_direntry_t, str], bool],
+                path: str,
+                top: bool = True
+        ) -> None:
+            ida_dirtree_visitor_t.__init__(self)
+
+            self.tree: ida_dirtree_t = get_std_dirtree(tree) \
+                if isinstance(tree, int) else tree
+            self.failed_entries: list[DirtreeEntry] = []
+            self.predicate = predicate
+            self.callback = func
+            self.path = Path(path)
+            self.top = top
+
+            self.tree.traverse(self)
+
+        def descendant_check(self, entry_path: str) -> bool:
+            return bool(Path(entry_path).relative_to(self.path)) \
+                if not self.top else Path(entry_path).parent == self.path
+
+        def visit(self, c: ida_dirtree_cursor_t, de: ida_direntry_t) -> int:
+            try:
+                entry_path = IDAUtils.get_entry_abspath(self.tree, de)
+
+                if de.valid() and entry_path != self.path.as_posix() and \
+                        self.descendant_check(entry_path) and \
+                        self.predicate(de, entry_path) and \
+                        not self.callback(de, entry_path):
+                    self.failed_entries.append((de, entry_path))
+            except ValueError:
+                pass
+
+            return 0
 
     @staticmethod
     def __get_minimum_mach_o_os_version() -> int:
@@ -279,3 +357,81 @@ class IDAUtils:
         xfunc.type.get_func_details(func_info)  # type: ignore
 
         return func_info
+
+    @staticmethod
+    def get_dirtree_entries(
+            tree: TreeType, path: str = "/"
+    ) -> list[DirtreeEntry]:
+        """Gets the entries of a tree (dirtree_id_t)
+
+        Args:
+            tree (int | ida_dirtree_t): The dirtree to get entries from
+            path (str, defaults to "/"): The path inside the tree
+                to get entries from
+
+        Returns:
+            list[tuple[ida_dirtree_cursor_t, ida_direntry_t]]:
+                List of tuples containing the cursor and direntry
+        """
+        tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
+
+        collector = IDAUtils.DirtreeCollector(tree, path)
+        return collector.entries
+
+    @staticmethod
+    def visit_dirtree(
+            tree: TreeType,
+            predicate: Callable[[ida_direntry_t, str], bool],
+            visit: Callable[[ida_direntry_t, str], bool],
+            path: str = "/"
+    ) -> list[DirtreeEntry]:
+        """Visits dirtree entries and executes a function on them
+        if they satisfy a predicate
+
+        Args:
+            tree (int | ida_dirtree_t): The dirtree to get entries from
+            predicate (Callable[[ida_direntry_t, str], bool]):
+                The predicate to test entries with
+            visit (Callable[[ida_direntry_t, str], bool]):
+                The function to execute on entries that satisfy the predicate
+
+        Returns:
+            list[tuple[ida_direntry_t, str]]:
+                List of tuples containing the direntry and path of failed entries
+        """  # noqa: E501
+        tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
+
+        executor = IDAUtils.DirtreeExecutor(tree, predicate, visit, path)
+        return executor.failed_entries
+
+    @staticmethod
+    def get_entry_abspath(tree: TreeType, entry: ida_direntry_t) -> str:
+        """Gets the absolute path of the current IDA dirtree entry
+        absolutely wtf ida
+
+        Args:
+            tree (int | ida_dirtree_t): The dirtree of the entry
+            entry (ida_direntry_t): The entry to get the path of
+
+        Returns:
+            str
+        """
+        tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
+        return tree.get_abspath(tree.find_entry(entry))
+
+    @staticmethod
+    def chdir_dirtree_entries(
+            tree: TreeType, path: str, entries: list[DirtreeEntry]
+    ) -> None:
+        """Changes the directory of dirtree entries to a new path
+
+        Args:
+            tree (int): The dirtree of the entries
+            path (str): The new path inside the tree
+            entries (list[tuple[ida_dirtree_cursor_t, ida_direntry_t]]):
+                The entries to change directory
+        """
+        tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
+
+        for _, entry_path in entries:
+            tree.rename(f"{entry_path}", f"{path}{entry_path}")

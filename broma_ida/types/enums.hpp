@@ -1,4 +1,4 @@
-// taken from https://github.com/geode-sdk/bindings/blob/main/bindings/include/Geode/Enums.hpp#36066d5fafa6f272b14237bb76feb119a248e3c2
+// taken from https://github.com/geode-sdk/bindings/blob/main/bindings/include/Geode/Enums.hpp#c949aeae063175eca528b33cf8f5b573935b0079
 
 // thanks pie
 enum class SearchType {
@@ -201,7 +201,8 @@ enum class UserListType {
 };
 
 enum class GJErrorCode {
-	NotFound = -1,
+	NotFound = -2,
+	GenericError = -1,
 	UpdateApp = 3
 };
 
@@ -221,8 +222,9 @@ enum class AccountError {
 };
 
 enum class GJSongError {
-	DownloadSongFailed = 1,
-	DownloadSFXFailed = 2
+	FailedToFetch = 1,
+	NotAllowed = 2,
+	DownloadCancelled = 3
 };
 
 enum class GJSongType {
@@ -245,7 +247,8 @@ enum class CommentError {
 
 enum class BackupAccountError {
 	BackupOrSyncFailed = -3,
-	LoginFailed = -2
+	LoginFailed = -2,
+	GenericError = -1
 };
 
 enum class GJMusicAction {
@@ -340,7 +343,8 @@ enum class GJTimedLevelType {
 
 enum class SongSelectType {
 	Default = 0,
-	Custom = 1
+	Custom = 1,
+	Default2 = 2
 };
 
 enum class AudioTargetType {
@@ -398,82 +402,82 @@ enum class ChestSpriteState {
 };
 
 enum class FormatterType {
-    Integer = 0,
-    Float = 1
+	Integer = 0,
+	Float = 1
 };
 
 enum class AudioModType {
-    Speed = 0,
-    Volume = 1
+	Speed = 0,
+	Volume = 1
 };
 
 enum class GJAreaActionType {
-    Move = 0,
-    Rotate = 1,
-    Scale = 2,
-    Fade = 3,
-    Tint = 4
+	Move = 0,
+	Rotate = 1,
+	Scale = 2,
+	Fade = 3,
+	Tint = 4
 };
 
 enum class GJSmartDirection {
-    Top = 1,
-    Bottom = 2,
-    Left = 3,
-    Right = 4,
-    TopLeft = 5,
-    TopRight = 6,
-    BottomLeft = 7,
-    BottomRight = 8
+	Top = 1,
+	Bottom = 2,
+	Left = 3,
+	Right = 4,
+	TopLeft = 5,
+	TopRight = 6,
+	BottomLeft = 7,
+	BottomRight = 8
 };
 
 enum class SmartBlockType {
-    Block = 0x31,
-    NormalSlope1 = 0x32,
-    NormalSlope2 = 0x33,
-    NormalSlope3 = 0x34,
-    NormalSlope4 = 0x35,
-    WideSlope1 = 0x36,
-    WideSlope2 = 0x37,
-    WideSlope3 = 0x38,
-    WideSlope4 = 0x39,
-    WideSlope5 = 0x41,
-    WideSlope6 = 0x42,
-    WideSlope7 = 0x43,
-    WideSlope8 = 0x44,
-    WideSlope9 = 0x45,
-    WideSlope10 = 0x46,
-    WideSlope11 = 0x47,
-    WideSlope12 = 0x48,
-    WideSlope13 = 0x49,
-    WideSlope14 = 0x4A,
-    WideSlope15 = 0x4B,
-    WideSlope16 = 0x4C
+	Block = 0x31,
+	NormalSlope1 = 0x32,
+	NormalSlope2 = 0x33,
+	NormalSlope3 = 0x34,
+	NormalSlope4 = 0x35,
+	WideSlope1 = 0x36,
+	WideSlope2 = 0x37,
+	WideSlope3 = 0x38,
+	WideSlope4 = 0x39,
+	WideSlope5 = 0x41,
+	WideSlope6 = 0x42,
+	WideSlope7 = 0x43,
+	WideSlope8 = 0x44,
+	WideSlope9 = 0x45,
+	WideSlope10 = 0x46,
+	WideSlope11 = 0x47,
+	WideSlope12 = 0x48,
+	WideSlope13 = 0x49,
+	WideSlope14 = 0x4A,
+	WideSlope15 = 0x4B,
+	WideSlope16 = 0x4C
 };
 
 enum class TouchTriggerControl {
-    Both = 0,
-    Player1 = 1,
-    Player2 = 2
+	Both = 0,
+	Player1 = 1,
+	Player2 = 2
 };
 
 enum class AudioSortType {
-    NameAscending = 0,
-    NameDescending = 1,
-    LengthAscending = 2,
-    LengthDescending = 3,
-    IDAscending = 4,
-    IDDescending = 5,
-    SongOrder = 6
+	NameAscending = 0,
+	NameDescending = 1,
+	LengthAscending = 2,
+	LengthDescending = 3,
+	IDAscending = 4,
+	IDDescending = 5,
+	SongOrder = 6
 };
 
 enum class spriteMode {
-    FrameByFrame = 1,
-    PartAnim = 2
+	FrameByFrame = 1,
+	PartAnim = 2
 };
 
 enum class GJAssetType {
-    Song = 1,
-    SFX = 2
+	Song = 1,
+	SFX = 2
 };
 
 enum class CommentKeyType {
@@ -488,16 +492,45 @@ enum class LevelLeaderboardMode {
 };
 
 enum class StatKey {
-    FirePath = 30,
-    IcePath = 31,
-    PoisonPath = 32,
-    ShadowPath = 33,
-    LavaPath = 34,
-    EarthPath = 35,
-    BloodPath = 36,
-    MetalPath = 37,
-    LightPath = 38,
-    SoulPath = 39
+	Jumps = 1,
+	Attempts = 2,
+	CustomLevels = 4,
+	Demons = 5,
+	Stars = 6,
+	MapPacks = 7,
+	Coins = 8,
+	DestroyedPlayers = 9,
+	LikedLevels = 10,
+	RatedLevels = 11,
+	UserCoins = 12,
+	Diamonds = 13,
+	Orbs = 14,
+	DailyLevels = 15,
+	ShadowShards = 16,
+	PoisonShards = 17,
+	FireShards = 18,
+	IceShards = 19,
+	LavaShards = 20,
+	Keys = 21,
+	EarthShards = 23,
+	BloodShards = 24,
+	MetalShards = 25,
+	LightShards = 26,
+	SoulShards = 27,
+	Moons = 28,
+	FirePath = 30,
+	IcePath = 31,
+	PoisonPath = 32,
+	ShadowPath = 33,
+	LavaPath = 34,
+	EarthPath = 35,
+	BloodPath = 36,
+	MetalPath = 37,
+	LightPath = 38,
+	SoulPath = 39,
+	Gauntlets = 40,
+	ListsRewards = 41,
+	Insanes = 42
 };
 
 enum class TextStyleType {
@@ -508,16 +541,16 @@ enum class TextStyleType {
 };
 
 enum class InputValueType {
-    Float = 1,
-    Int = 2,
-    Uint = 3,
+	Float = 1,
+	Int = 2,
+	Uint = 3,
 };
 
 enum class GJInputStyle {
-    // Golden label
-    GoldLabel = 0,
-    // chatFont label
-    ChatLabel = 1,
+	// Golden label
+	GoldLabel = 0,
+	// chatFont label
+	ChatLabel = 1,
 };
 
 enum class GJDifficultyName {
@@ -605,35 +638,37 @@ enum class gjParticleValue {
 };
 
 enum class ColorSelectType {
-    Pulse = 0,
-    Color = 1,
-    Filter = 2
+	Pulse = 0,
+	Color = 1,
+	Filter = 2
 };
 
 enum class AudioGuidelinesType {
-    GuidelineCreator = 0,
-    BPMFinder = 1
+	GuidelineCreator = 0,
+	BPMFinder = 1
 };
 
 enum class SmartBrowseFilter {};
 
 enum class GJUITouchEvent {
-    Pressed = 0,
-    Moved = 1,
-    Ended = 2
+	Pressed = 0,
+	Moved = 1,
+	Ended = 2
 };
 
 enum class ObjectScaleType {
-    XY = 0,
-    X = 1,
-    Y = 2
+	XY = 0,
+	X = 1,
+	Y = 2
 };
 
 enum class CommentType {
 	Level = 0,
 	Account = 1,
 	FriendRequest = 2,
+	Multiplayer = 3,
 	ListDescription = 4,
+	ListName = 5
 };
 
 enum class BoomListType {
@@ -690,7 +725,8 @@ enum class CurrencySpriteType {
 };
 
 enum class CurrencyRewardType {
-	// todo
+	Default = 0,
+	Treasure = 1
 };
 
 enum class MenuAnimationType {
@@ -699,9 +735,12 @@ enum class MenuAnimationType {
 };
 
 enum class ShopType {
-	Normal,
-	Secret,
-	Community
+	Normal = 0,
+	Secret = 1,
+	Community = 2,
+	Mechanic = 3,
+	Diamond = 4,
+	Paths = 5
 };
 
 enum class UpdateResponse {
@@ -789,6 +828,8 @@ enum class EditCommand {
 enum class SelectArtType {
 	Background = 0,
 	Ground = 1,
+	Middleground = 2,
+	Premade = 3
 };
 
 enum class UndoCommand {
@@ -838,13 +879,15 @@ enum class GJDifficulty {
 };
 
 enum class GJLevelType {
-	Local = 1,
+	Default = 0,
+	Main = 1,
+	Local [[deprecated("Use Main instead")]] = 1,
 	Editor = 2,
-	Saved = 3
+	Saved = 3,
+	SearchResult = 4
 };
 
-enum class GJRewardType
-{
+enum class GJRewardType {
 	Unknown = 0x0,
 	Small = 0x1,
 	Large = 0x2,
@@ -880,14 +923,17 @@ enum class GJChallengeType {
 };
 
 enum class GJScoreType {
-	Unknown = 0,
-	Creator = 1
+	Top = 0,
+	Creator = 1,
+	Search = 2,
+	LevelScore = 3
 };
 
 enum class LevelLeaderboardType {
 	Friends = 0,
 	Global = 1,
-	Weekly = 2
+	Weekly = 2,
+	Local = 3
 };
 
 enum class GJHttpType {
@@ -946,7 +992,7 @@ enum class GJHttpType {
 	GetTopArtists = 0x35,
 	GetAccountBackupURL = 0x36,
 	GetAccountSyncURL = 0x37,
-	//0x38 is unused? 
+	NetworkTest = 0x38,
 	JoinLobby = 0x39,
 	ExitLobby = 0x3A,
 	GetCustomContentURL = 0x3B,
@@ -970,7 +1016,6 @@ enum class DialogAnimationType {
 	FromRight = 3,
 	FromTop = 4,
 	FromTop2 = 5,
-	// a 5th type is defined which acts exactly the same as FromTop
 };
 
 enum class CircleMode {

@@ -1,0 +1,71 @@
+#pragma once
+
+namespace std
+{
+	template <class _Ty>
+	struct _Tuple_val { // stores each value in a tuple
+		constexpr _Tuple_val() : _Val() {}
+
+		template <class _Other>
+		constexpr _Tuple_val(_Other&& _Arg) : _Val(static_cast<_Other&&>(_Arg)) {}
+
+		_Ty _Val;
+	};
+
+
+	template <class... Rest>
+	class tuple;
+
+	template <>
+	class tuple<> { // empty tuple
+	public:
+		constexpr tuple() noexcept = default; /* strengthened */
+
+		constexpr tuple(const tuple&) noexcept /* strengthened */ {} // TRANSITION, ABI: should be defaulted
+
+		constexpr tuple& operator=(const tuple&) = default;
+	
+		constexpr void swap(tuple&) noexcept {}
+
+		constexpr bool _Equals(const tuple&) const noexcept {
+			return true;
+		}
+
+		[[nodiscard]] constexpr bool _Less(const tuple&) const noexcept {
+			return false;
+		}
+	};
+
+	template <class _This, class... _Rest>
+	class tuple<_This, _Rest...> : private tuple<_Rest...> { // recursive tuple definition
+	public:
+		using _This_type = _This;
+		using _Mybase    = tuple<_Rest...>;
+
+		tuple(const tuple&) = default;
+		tuple(tuple&&)      = default;
+
+		tuple& operator=(const volatile tuple&) = delete;
+
+		constexpr _Mybase& _Get_rest() noexcept { // get reference to rest of elements
+			return *this;
+		}
+
+		constexpr const _Mybase& _Get_rest() const noexcept { // get const reference to rest of elements
+			return *this;
+		}
+
+		// template <class... _Other>
+		// constexpr bool _Equals(const tuple<_Other...>& _Right) const {
+		// 	return _Myfirst._Val == _Right._Myfirst._Val && _Mybase::_Equals(_Right._Get_rest());
+		// }
+
+		template <class... _Other>
+		[[nodiscard]] constexpr bool _Less(const tuple<_Other...>& _Right) const {
+			return _Myfirst._Val < _Right._Myfirst._Val
+				|| (!(_Right._Myfirst._Val < _Myfirst._Val) && _Mybase::_Less(_Right._Get_rest()));
+		}
+
+		_Tuple_val<_This> _Myfirst; // the stored element
+	};
+}

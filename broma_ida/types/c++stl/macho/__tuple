@@ -1,0 +1,136 @@
+#pragma once
+
+#include "array"
+#include "type_traits"
+
+namespace std
+{
+	template <class ..._Tp> class tuple;
+	template <class ..._Tp> struct __tuple_types {};
+	template <size_t...> struct __tuple_indices {};
+
+	template <class _IdxType, _IdxType... _Values>
+	struct __integer_sequence {
+		template <template <class _OIdxType, _OIdxType...> class _ToIndexSeq, class _ToIndexType>
+		using __convert = _ToIndexSeq<_ToIndexType, _Values...>;
+
+		template <size_t _Sp>
+		using __to_tuple_indices = __tuple_indices<(_Values + _Sp)...>;
+	};
+
+	template <class _Tp> struct tuple_size;
+
+	template <class _Tp, class...>
+	using __enable_if_tuple_size_imp = _Tp;
+
+	template <class _Tp>
+	struct tuple_size<__enable_if_tuple_size_imp<
+		const _Tp,
+		typename enable_if<!is_volatile<_Tp>::value>::type,
+		integral_constant<size_t, sizeof(tuple_size<_Tp>)>>>
+		: public integral_constant<size_t, tuple_size<_Tp>::value> {};
+
+	template <class _Tp>
+	struct tuple_size<__enable_if_tuple_size_imp<
+		volatile _Tp,
+		typename enable_if<!is_const<_Tp>::value>::type,
+		integral_constant<size_t, sizeof(tuple_size<_Tp>)>>>
+		: public integral_constant<size_t, tuple_size<_Tp>::value> {};
+
+	template <class _Tp>
+	struct tuple_size<__enable_if_tuple_size_imp<
+		const volatile _Tp,
+		integral_constant<size_t, sizeof(tuple_size<_Tp>)>>>
+		: public integral_constant<size_t, tuple_size<_Tp>::value> {};
+
+
+	template <size_t _Ep, size_t _Sp>
+	using __make_indices_imp =
+		typename __make_integer_seq<__integer_sequence, size_t, _Ep - _Sp>::template
+		__to_tuple_indices<_Sp>;
+
+	template <size_t _Ep, size_t _Sp = 0>
+	struct __make_tuple_indices
+	{
+		static_assert(_Sp <= _Ep, "__make_tuple_indices input error");
+		typedef __make_indices_imp<_Ep, _Sp> type;
+	};
+
+
+	template <class _TupleTypes, class _TupleIndices>
+	struct __make_tuple_types_flat;
+
+	template <template <class...> class _Tuple, class ..._Types, size_t ..._Idx>
+	struct __make_tuple_types_flat<_Tuple<_Types...>, __tuple_indices<_Idx...>> {
+	// Specialization for pair, tuple, and __tuple_types
+	template <class _Tp, class _ApplyFn = add_cv_t<_Tp>>
+	using __apply_quals = __tuple_types<
+		typename _ApplyFn::template __apply<__type_pack_element<_Idx, _Types...>>...
+		>;
+	};
+
+	template <class _Vt, size_t _Np, size_t ..._Idx>
+	struct __make_tuple_types_flat<array<_Vt, _Np>, __tuple_indices<_Idx...>> {
+	template <size_t>
+	using __value_type = _Vt;
+	template <class _Tp, class _ApplyFn = add_cv_t<_Tp>>
+	using __apply_quals = __tuple_types<
+		typename _ApplyFn::template __apply<__value_type<_Idx>>...
+		>;
+	};
+
+
+	template <class _Tp, size_t _Ep = tuple_size<typename remove_reference<_Tp>::type>::value,
+			size_t _Sp = 0,
+			bool _SameSize = (_Ep == tuple_size<typename remove_reference<_Tp>::type>::value)>
+	struct __make_tuple_types
+	{
+		static_assert(_Sp <= _Ep, "__make_tuple_types input error");
+		using _RawTp = typename remove_cv<typename remove_reference<_Tp>::type>::type;
+		using _Maker = __make_tuple_types_flat<_RawTp, typename __make_tuple_indices<_Ep, _Sp>::type>;
+		using type = typename _Maker::template __apply_quals<_Tp>;
+	};
+
+	template <class ..._Types, size_t _Ep>
+	struct __make_tuple_types<tuple<_Types...>, _Ep, 0, true> {
+		typedef __tuple_types<_Types...> type;
+	};
+
+	template <class ..._Types, size_t _Ep>
+	struct __make_tuple_types<__tuple_types<_Types...>, _Ep, 0, true> {
+		typedef __tuple_types<_Types...> type;
+	};
+
+
+	template <size_t _Ip, class _Tp> struct tuple_element;
+
+	template <size_t _Ip, class _Tp>
+	struct tuple_element<_Ip, const _Tp>
+	{
+		typedef typename add_const<typename tuple_element<_Ip, _Tp>::type>::type type;
+	};
+
+	template <size_t _Ip, class _Tp>
+	struct tuple_element<_Ip, volatile _Tp>
+	{
+		typedef typename add_volatile<typename tuple_element<_Ip, _Tp>::type>::type type;
+	};
+
+	template <size_t _Ip, class _Tp>
+	struct tuple_element<_Ip, const volatile _Tp>
+	{
+		typedef typename add_cv<typename tuple_element<_Ip, _Tp>::type>::type type;
+	};
+
+
+	struct __check_tuple_constructor_fail {
+		static constexpr bool __enable_explicit_default() { return false; }
+		static constexpr bool __enable_implicit_default() { return false; }
+		template <class ...>
+		static constexpr bool __enable_explicit() { return false; }
+		template <class ...>
+		static constexpr bool __enable_implicit() { return false; }
+		template <class ...>
+		static constexpr bool __enable_assign() { return false; }
+	};
+}

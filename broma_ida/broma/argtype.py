@@ -4,11 +4,12 @@ from dataclasses import dataclass, is_dataclass
 
 from re import sub
 
+STL_TREE = list[str | list[Union[str, "STL_TREE"]]]
 
-class ATUtils:
-    """ArgType utilities."""
 
-    STL_TREE = list[str | list[Union[str, "STL_TREE"]]]
+class STLUtils:
+    """STL utilities."""
+
     STL_EXPANSION_MAP: Final = {
         "std::map": "std::map<{0}, {1}, std::less<{0}>, std::allocator<std::pair<const {0}, {1}>>>",  # noqa: E501
         "std::unordered_map":
@@ -54,16 +55,18 @@ class ATUtils:
             stl_t (str): STL type string.
 
         Returns:
-            list[str | list[str]]: ["", "std::type", ["const", "T1", ""], ["", "T2, "*"], "&"]
+            list[str | list[str]]: if stl_t is "std::type<const T1, T2*>&" then
+                ["", "std::type", ["const", "T1", ""], ["", "T2, "*"], "&"] will
+                be returned.
         """  # noqa: E501
         ptr = stl_t[-1] if stl_t[-1] in ("*", "&") else ""
         const = "const" if stl_t.startswith("const") or \
             stl_t.removesuffix(ptr).rstrip().endswith("const") else ""
 
-        if "std::" not in stl_t or ATUtils.strip_crp(stl_t) == "std::string":
-            return [const, ATUtils.strip_crp(stl_t), ptr]
+        if "std::" not in stl_t or STLUtils.strip_crp(stl_t) == "std::string":
+            return [const, STLUtils.strip_crp(stl_t), ptr]
 
-        split_stl_t: ATUtils.STL_TREE = [const]
+        split_stl_t: STL_TREE = [const]
         nest_count = 0
         current_token: str = ""
 
@@ -82,7 +85,7 @@ class ATUtils:
                     current_token += c
 
                 split_stl_t.append(
-                    ATUtils.split_stl_type(current_token.strip())
+                    STLUtils.split_stl_type(current_token.strip())
                 )
                 if c != ",":
                     split_stl_t.append(ptr)
@@ -107,7 +110,7 @@ class ATUtils:
         Returns:
             str
         """  # noqa: E501
-        def flatten_and_expand(s: ATUtils.STL_TREE) -> str:
+        def flatten_and_expand(s: STL_TREE) -> str:
             r: list[str] = []
 
             for i, t in enumerate(s):
@@ -119,11 +122,11 @@ class ATUtils:
                     if t == "std::string":
                         return "{} {}{}".format(
                             cast(str, s[0]),
-                            ATUtils.STL_EXPANSION_MAP["std::string"],
+                            STLUtils.STL_EXPANSION_MAP["std::string"],
                             cast(str, s.pop(-1))
                         ).lstrip()
 
-                    expanded_stl_t = ATUtils.STL_EXPANSION_MAP[t]
+                    expanded_stl_t = STLUtils.STL_EXPANSION_MAP[t]
 
                     r.append(expanded_stl_t)
 
@@ -133,7 +136,7 @@ class ATUtils:
                         contained = cast(list[str], s.pop(i + 1))
                         r.append("{} {}{}".format(*contained).lstrip())
 
-                    if ATUtils.has_two_templates(expanded_stl_t):
+                    if STLUtils.has_two_templates(expanded_stl_t):
                         if "std::" in s[i + 1][1]:
                             r.append(
                                 flatten_and_expand(cast(list, s.pop(i + 1)))
@@ -158,7 +161,7 @@ class ATUtils:
 
             return r[0]
 
-        return flatten_and_expand(ATUtils.split_stl_type(stl_t))
+        return flatten_and_expand(STLUtils.split_stl_type(stl_t))
 
 
 @dataclass
@@ -174,7 +177,9 @@ class ArgType:
             raise Exception("ArgType 'name' must be provided!")
 
         if "std::" in self.type:
-            self.type = ATUtils.format_ptr(ATUtils.expand_stl_type(self.type))
+            self.type = STLUtils.format_ptr(
+                STLUtils.expand_stl_type(self.type)
+            )
 
     @property
     def stripped_type(self) -> str:
@@ -183,7 +188,7 @@ class ArgType:
         Returns:
             str
         """
-        return ATUtils.strip_crp(self.type)
+        return STLUtils.strip_crp(self.type)
 
     def __str__(self) -> str:
         if self.name == "":
@@ -207,4 +212,6 @@ class RetType(ArgType):
 
     def __post_init__(self):
         if "std::" in self.type:
-            self.type = ATUtils.format_ptr(ATUtils.expand_stl_type(self.type))
+            self.type = STLUtils.format_ptr(
+                STLUtils.expand_stl_type(self.type)
+            )

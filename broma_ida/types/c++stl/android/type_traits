@@ -93,9 +93,15 @@ namespace std
 
 	template<bool B, class T, class F>
 	struct conditional { using type = T; };
-	
 	template<class T, class F>
 	struct conditional<false, T, F> { using type = F; };
+
+	template <bool, class _Tp = void>
+	struct enable_if {};
+	template <class _Tp>
+	struct enable_if<true, _Tp> {typedef _Tp type;};
+	template <bool _Bp, class _Tp = void>
+	using enable_if_t = typename enable_if<_Bp, _Tp>::type;
 
 
 	template<class...>

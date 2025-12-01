@@ -20,6 +20,7 @@ class EnhancedGameObject;
 struct PlayerButtonCommand;
 class EventTriggerInstance;
 class AdvancedFollowInstance;
+class SmartPrefabResult;
 struct KeyframeObject;
 struct SavedActiveObjectState;
 struct SavedSpecialObjectState;
@@ -30,6 +31,7 @@ struct GJValueTween;
 struct SongChannelState;
 struct GJPointDouble;
 struct GameObjectPhysics;
+class FMODSoundTween;
 
 // exists because IDA cant dynamically make STL types, so fixing function parameters is impossible
 class holy_shit
@@ -78,7 +80,8 @@ public:
 	std::map<int, std::vector<cocos2d::CCObject*>> m_M_int_V_ccobj_p;
 	std::map<int, int> m_M_int_int;
 	std::map<std::pair<GJGameEvent, int>, std::vector<EventTriggerInstance>> m_M_pair_gjge_int_V_eti;
-	
+	std::map<std::pair<int, int>, FMODSoundTween> m_M_pair_int_int_fmodst;
+
 	std::unordered_map<int, GameObject*> m_UM_int_go_p;
 	std::unordered_map<int, std::pair<int, int>> m_UM_int_pair_int_int;
 	std::unordered_map<int, int> m_UM_int_int;

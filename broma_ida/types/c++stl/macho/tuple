@@ -1,0 +1,494 @@
+#pragma once
+
+#include "cstddef"
+#include "type_traits"
+#include "__tuple"
+
+#if (defined(_MSC_VER) && !defined(__clang__)) && __has_declspec_attribute(empty_bases)
+#define _LIBCPP_DECLSPEC_EMPTY_BASES __declspec(empty_bases)
+#else
+#define _LIBCPP_DECLSPEC_EMPTY_BASES
+#endif // __has_declspec_attribute(empty_bases)
+
+namespace std
+{
+	template <size_t _Ip, class _Hp,
+          bool=is_empty<_Hp>::value && !__libcpp_is_final<_Hp>::value
+		>
+	class __tuple_leaf;
+
+	template <size_t _Ip, class _Hp, bool _Ep>
+	inline void swap(__tuple_leaf<_Ip, _Hp, _Ep>& __x, __tuple_leaf<_Ip, _Hp, _Ep>& __y)
+		noexcept(__is_nothrow_swappable<_Hp>::value)
+	{
+		swap(__x.get(), __y.get());
+	}
+
+	template <size_t _Ip, class _Hp, bool>
+	class __tuple_leaf
+	{
+		_Hp __value_;
+
+		template <class _Tp>
+		static constexpr bool __can_bind_reference() {
+			return true;
+		}
+
+		__tuple_leaf& operator=(const __tuple_leaf&);
+	public:
+		inline constexpr __tuple_leaf()
+			 : __value_()
+		{static_assert(!is_reference<_Hp>::value,
+				"Attempted to default construct a reference element in a tuple");}
+
+		template <class _Alloc>
+		inline __tuple_leaf(integral_constant<int, 0>, const _Alloc&)
+			: __value_()
+		{static_assert(!is_reference<_Hp>::value,
+			"Attempted to default construct a reference element in a tuple");}
+
+		template <class _Alloc>
+		inline __tuple_leaf(integral_constant<int, 2>, const _Alloc& __a)
+			: __value_(__a)
+		{static_assert(!is_reference<_Hp>::value,
+			"Attempted to default construct a reference element in a tuple");}
+
+		__tuple_leaf(const __tuple_leaf& __t) = default;
+		__tuple_leaf(__tuple_leaf&& __t) = default;
+
+		template <class _Tp>
+		inline __tuple_leaf& operator=(_Tp&& __t) /* _NOEXCEPT_((is_nothrow_assignable<_Hp&, _Tp>::value)) */
+		{
+			__value_ = static_cast<_Tp&&>(__t);
+			return *this;
+		}
+
+		inline int swap(__tuple_leaf& __t) noexcept(__is_nothrow_swappable<__tuple_leaf>::value)
+		{
+			std::swap(*this, __t);
+			return 0;
+		}
+
+		inline constexpr       _Hp& get()       noexcept {return __value_;}
+		inline constexpr const _Hp& get() const noexcept {return __value_;}
+	};
+
+	template <size_t _Ip, class _Hp>
+	class __tuple_leaf<_Ip, _Hp, true>
+		: private _Hp
+	{
+		__tuple_leaf& operator=(const __tuple_leaf&);
+
+	public:
+		inline constexpr __tuple_leaf()
+			/* noexcfept(is_nothrow_default_constructible<_Hp>::value) */ {}
+
+		template <class _Alloc>
+		inline __tuple_leaf(integral_constant<int, 0>, const _Alloc&) {}
+
+		template <class _Alloc>
+		inline __tuple_leaf(integral_constant<int, 2>, const _Alloc& __a)
+			: _Hp(__a) {}
+
+		template <class _Tp, class _Alloc>
+		inline explicit __tuple_leaf(integral_constant<int, 0>, const _Alloc&, _Tp&& __t)
+			: _Hp(static_cast<_Tp&&>(__t)) {}
+
+		template <class _Tp, class _Alloc>
+		inline explicit __tuple_leaf(integral_constant<int, 2>, const _Alloc& __a, _Tp&& __t)
+			: _Hp(static_cast<_Tp&&>(__t), __a) {}
+
+		__tuple_leaf(__tuple_leaf const &) = default;
+		__tuple_leaf(__tuple_leaf &&) = default;
+
+		template <class _Tp>
+		inline __tuple_leaf&
+		operator=(_Tp&& __t) /* noexcept((is_nothrow_assignable<_Hp&, _Tp>::value)) */
+		{
+			_Hp::operator=(static_cast<_Tp&&>(__t));
+			return *this;
+		}
+
+		inline int swap(__tuple_leaf& __t) noexcept(__is_nothrow_swappable<__tuple_leaf>::value)
+		{
+			std::swap(*this, __t);
+			return 0;
+		}
+
+		inline constexpr       _Hp& get()       noexcept {return static_cast<_Hp&>(*this);}
+		inline constexpr const _Hp& get() const noexcept {return static_cast<const _Hp&>(*this);}
+	};
+
+	template <class ..._Tp>
+	inline void __swallow(_Tp&&...) noexcept {}
+
+	template <class _Tp>
+	struct __all_default_constructible;
+
+	// template <class ..._Tp>
+	// struct __all_default_constructible<__tuple_types<_Tp...>>
+	// 	: __all<is_default_constructible<_Tp>::value...>
+	// { };
+
+	template<class _Indx, class ..._Tp> struct __tuple_impl;
+
+	template<size_t ..._Indx, class ..._Tp>
+	struct _LIBCPP_DECLSPEC_EMPTY_BASES __tuple_impl<__tuple_indices<_Indx...>, _Tp...>
+		: public __tuple_leaf<_Indx, _Tp>...
+	{
+		inline constexpr __tuple_impl()
+			/* noexcept(__all<is_nothrow_default_constructible<_Tp>::value...>::value) */ {}
+
+		template <size_t ..._Uf, class ..._Tf,
+				size_t ..._Ul, class ..._Tl, class ..._Up>
+		inline constexpr explicit
+		__tuple_impl(__tuple_indices<_Uf...>, __tuple_types<_Tf...>,
+					__tuple_indices<_Ul...>, __tuple_types<_Tl...>,
+					_Up&&... __u)
+					/*noexcept((__all<is_nothrow_constructible<_Tf, _Up>::value...>::value &&
+								__all<is_nothrow_default_constructible<_Tl>::value...>::value)) */ :
+			__tuple_leaf<_Uf, _Tf>(static_cast<_Up&&>(__u))...,
+			__tuple_leaf<_Ul, _Tl>()...
+		{}
+
+		__tuple_impl(const __tuple_impl&) = default;
+		__tuple_impl(__tuple_impl&&) = default;
+
+		inline __tuple_impl& operator=(const __tuple_impl& __t) /* noexcept((__all<is_nothrow_copy_assignable<_Tp>::value...>::value)) */
+		{
+			__swallow(__tuple_leaf<_Indx, _Tp>::operator=(static_cast<const __tuple_leaf<_Indx, _Tp>&>(__t).get())...);
+			return *this;
+		}
+
+		inline __tuple_impl& operator=(__tuple_impl&& __t) /* noexcept((__all<is_nothrow_move_assignable<_Tp>::value...>::value)) */
+		{
+			__swallow(__tuple_leaf<_Indx, _Tp>::operator=(static_cast<_Tp&&>(static_cast<__tuple_leaf<_Indx, _Tp>&>(__t).get()))...);
+			return *this;
+		}
+
+		inline void swap(__tuple_impl& __t)
+			/* noexcept(__all<__is_nothrow_swappable<_Tp>::value...>::value) */
+		{
+			__swallow(__tuple_leaf<_Indx, _Tp>::swap(static_cast<__tuple_leaf<_Indx, _Tp>&>(__t))...);
+		}
+	};
+
+
+
+	template <class ..._Tp>
+	class tuple
+	{
+		typedef __tuple_impl<typename __make_tuple_indices<sizeof...(_Tp)>::type, _Tp...> _BaseT;
+
+		_BaseT __base_;
+
+	#if defined(_LIBCPP_ENABLE_TUPLE_IMPLICIT_REDUCED_ARITY_EXTENSION)
+		static constexpr bool _EnableImplicitReducedArityExtension = true;
+	#else
+		static constexpr bool _EnableImplicitReducedArityExtension = false;
+	#endif
+
+		template <class ..._Args>
+		struct _PackExpandsToThisTuple : false_type {};
+
+		template <class _Arg>
+		struct _PackExpandsToThisTuple<_Arg>
+			: is_same<typename remove_cvref<_Arg>::type, tuple> {};
+
+		template <bool _MaybeEnable, class _Dummy = void>
+		struct _CheckArgsConstructor : __check_tuple_constructor_fail {};
+
+		template <class _Dummy>
+		struct _CheckArgsConstructor<true, _Dummy>
+		{
+			template <int&...>
+			static constexpr bool __enable_implicit_default() {
+				// return __all<__is_implicitly_default_constructible<_Tp>::value... >::value;
+				return true;
+			}
+
+			template <int&...>
+			static constexpr bool __enable_explicit_default() {
+				// return
+				// 	__all<is_default_constructible<_Tp>::value...>::value &&
+				// 	!__enable_implicit_default< >();
+				return false;
+			}
+
+
+			template <class ..._Args>
+			static constexpr bool __enable_explicit() {
+				// return
+				// 	__tuple_constructible<
+				// 		tuple<_Args...>,
+				// 		typename __make_tuple_types<tuple,
+				// 				sizeof...(_Args) < sizeof...(_Tp) ?
+				// 					sizeof...(_Args) :
+				// 					sizeof...(_Tp)>::type
+				// 	>::value &&
+				// 	!__tuple_convertible<
+				// 		tuple<_Args...>,
+				// 		typename __make_tuple_types<tuple,
+				// 				sizeof...(_Args) < sizeof...(_Tp) ?
+				// 					sizeof...(_Args) :
+				// 					sizeof...(_Tp)>::type
+				// 	>::value &&
+				// 	__all_default_constructible<
+				// 		typename __make_tuple_types<tuple, sizeof...(_Tp),
+				// 				sizeof...(_Args) < sizeof...(_Tp) ?
+				// 					sizeof...(_Args) :
+				// 					sizeof...(_Tp)>::type
+				// 	>::value;
+				return false;
+			}
+
+			template <class ..._Args>
+			static constexpr bool __enable_implicit() {
+				// return
+				// __tuple_constructible<
+				// 		tuple<_Args...>,
+				// 		typename __make_tuple_types<tuple,
+				// 				sizeof...(_Args) < sizeof...(_Tp) ?
+				// 					sizeof...(_Args) :
+				// 					sizeof...(_Tp)>::type
+				// 	>::value &&
+				// 	__tuple_convertible<
+				// 		tuple<_Args...>,
+				// 		typename __make_tuple_types<tuple,
+				// 				sizeof...(_Args) < sizeof...(_Tp) ?
+				// 					sizeof...(_Args) :
+				// 					sizeof...(_Tp)>::type
+				// 	>::value &&
+				// 	__all_default_constructible<
+				// 		typename __make_tuple_types<tuple, sizeof...(_Tp),
+				// 				sizeof...(_Args) < sizeof...(_Tp) ?
+				// 					sizeof...(_Args) :
+				// 					sizeof...(_Tp)>::type
+				// 	>::value;
+				return true;
+			}
+		};
+
+		template <bool _MaybeEnable,
+				bool = sizeof...(_Tp) == 1,
+				class _Dummy = void>
+		struct _CheckTupleLikeConstructor : __check_tuple_constructor_fail {};
+
+		template <class _Dummy>
+		struct _CheckTupleLikeConstructor<true, false, _Dummy>
+		{
+			template <class _Tuple>
+			static constexpr bool __enable_implicit() {
+				// return __tuple_constructible<_Tuple, tuple>::value
+				// 	&& __tuple_convertible<_Tuple, tuple>::value;
+				return true;
+			}
+
+			template <class _Tuple>
+			static constexpr bool __enable_explicit() {
+				// return __tuple_constructible<_Tuple, tuple>::value
+				// && !__tuple_convertible<_Tuple, tuple>::value;
+				return false;
+			}
+		};
+
+		template <class _Dummy>
+		struct _CheckTupleLikeConstructor<true, true, _Dummy>
+		{
+			// This trait is used to disable the tuple-like constructor when
+			// the UTypes... constructor should be selected instead.
+			// See LWG issue #2549.
+			// template <class _Tuple>
+			// using _PreferTupleLikeConstructor = _Or<
+			// 	// Don't attempt the two checks below if the tuple we are given
+			// 	// has the same type as this tuple.
+			// 	_IsSame<remove_cvref_t<_Tuple>, tuple>,
+			// 	_Lazy<_And,
+			// 		_Not<is_constructible<_Tp..., _Tuple>>,
+			// 		_Not<is_convertible<_Tuple, _Tp...>>
+			// 	>
+			// >;
+
+			template <class _Tuple>
+			static constexpr bool __enable_implicit() {
+				// return _And<
+				// 	__tuple_constructible<_Tuple, tuple>,
+				// 	__tuple_convertible<_Tuple, tuple>,
+				// 	_PreferTupleLikeConstructor<_Tuple>
+				// >::value;
+				return true;
+			}
+
+			template <class _Tuple>
+			static constexpr bool __enable_explicit() {
+				// return _And<
+				// 	__tuple_constructible<_Tuple, tuple>,
+				// 	_PreferTupleLikeConstructor<_Tuple>,
+				// 	_Not<__tuple_convertible<_Tuple, tuple>>
+				// >::value;
+				return false;
+			}
+		};
+
+		// template <class _Tuple, bool _DisableIfLValue>
+		// using _EnableImplicitTupleLikeConstructor = _EnableIf<
+		// 					_CheckTupleLikeConstructor<
+		// 						__tuple_like_with_size<_Tuple, sizeof...(_Tp)>::value
+		// 						&& !_PackExpandsToThisTuple<_Tuple>::value
+		// 						&& (!is_lvalue_reference<_Tuple>::value || !_DisableIfLValue)
+		// 					>::template __enable_implicit<_Tuple>(),
+		// 					bool
+		// 				>;
+
+		// template <class _Tuple, bool _DisableIfLValue>
+		// using _EnableExplicitTupleLikeConstructor = _EnableIf<
+		// 					_CheckTupleLikeConstructor<
+		// 						__tuple_like_with_size<_Tuple, sizeof...(_Tp)>::value
+		// 						&& !_PackExpandsToThisTuple<_Tuple>::value
+		// 						&& (!is_lvalue_reference<_Tuple>::value || !_DisableIfLValue)
+		// 					>::template __enable_explicit<_Tuple>(),
+		// 					bool
+		// 				>;
+		// template <size_t _Jp, class ..._Up> friend constexpr
+		// 	typename tuple_element<_Jp, tuple<_Up...> >::type& get(tuple<_Up...>&) noexcept;
+		template <size_t _Jp, class ..._Up> friend constexpr
+			const typename tuple_element<_Jp, tuple<_Up...> >::type& get(const tuple<_Up...>&) noexcept;
+		template <size_t _Jp, class ..._Up> friend constexpr
+			typename tuple_element<_Jp, tuple<_Up...> >::type&& get(tuple<_Up...>&&) noexcept;
+		template <size_t _Jp, class ..._Up> friend constexpr
+			const typename tuple_element<_Jp, tuple<_Up...> >::type&& get(const tuple<_Up...>&&) noexcept;
+
+	public:
+		template <bool _Dummy = true, enable_if<
+			_CheckArgsConstructor<_Dummy>::__enable_implicit_default()
+		, void*> = nullptr>
+		inline constexpr tuple()
+			/* noexcept(__all<is_nothrow_default_constructible<_Tp>::value...>::value) */ {}
+
+		template <bool _Dummy = true, enable_if<
+			_CheckArgsConstructor<_Dummy>::__enable_explicit_default()
+		, void*> = nullptr>
+		explicit inline constexpr tuple()
+			/* noexcept(__all<is_nothrow_default_constructible<_Tp>::value...>::value) */ {}
+
+		tuple(tuple const&) = default;
+		tuple(tuple&&) = default;
+
+		template <bool _Dummy = true,
+				typename enable_if
+						<
+							_CheckArgsConstructor<
+								_Dummy
+							>::template __enable_implicit<_Tp const&...>(),
+							bool
+						>::type = false
+			>
+		inline constexpr tuple(const _Tp& ... __t) /* noexcept((__all<is_nothrow_copy_constructible<_Tp>::value...>::value)) */
+			: __base_(typename __make_tuple_indices<sizeof...(_Tp)>::type(),
+					typename __make_tuple_types<tuple, sizeof...(_Tp)>::type(),
+					typename __make_tuple_indices<0>::type(),
+					typename __make_tuple_types<tuple, 0>::type(),
+					__t...
+				) {}
+
+		template <bool _Dummy = true,
+				typename enable_if
+						<
+							_CheckArgsConstructor<
+								_Dummy
+							>::template __enable_explicit<_Tp const&...>(),
+							bool
+						>::type = false
+			>
+		inline constexpr explicit tuple(const _Tp& ... __t) /* noexcept((__all<is_nothrow_copy_constructible<_Tp>::value...>::value)) */
+			: __base_(typename __make_tuple_indices<sizeof...(_Tp)>::type(),
+					typename __make_tuple_types<tuple, sizeof...(_Tp)>::type(),
+					typename __make_tuple_indices<0>::type(),
+					typename __make_tuple_types<tuple, 0>::type(),
+					__t...
+				) {}
+
+		template <class ..._Up,
+			bool _PackIsTuple = _PackExpandsToThisTuple<_Up...>::value,
+			typename enable_if
+					<
+						_CheckArgsConstructor<
+							sizeof...(_Up) == sizeof...(_Tp)
+							&& !_PackIsTuple
+						>::template __enable_implicit<_Up...>() ||
+						_CheckArgsConstructor<
+							_EnableImplicitReducedArityExtension
+							&& sizeof...(_Up) < sizeof...(_Tp)
+							&& !_PackIsTuple
+						>::template __enable_implicit<_Up...>(),
+						bool
+					>::type = false
+			>
+		inline constexpr
+		tuple(_Up&&... __u)
+			/* noexcept((
+				is_nothrow_constructible<_BaseT,
+					typename __make_tuple_indices<sizeof...(_Up)>::type,
+					typename __make_tuple_types<tuple, sizeof...(_Up)>::type,
+					typename __make_tuple_indices<sizeof...(_Tp), sizeof...(_Up)>::type,
+					typename __make_tuple_types<tuple, sizeof...(_Tp), sizeof...(_Up)>::type,
+					_Up...
+				>::value
+			)) */
+			: __base_(typename std::__make_tuple_indices<sizeof...(_Up)>::type(),
+					typename __make_tuple_types<tuple, sizeof...(_Up)>::type(),
+					typename __make_tuple_indices<sizeof...(_Tp), sizeof...(_Up)>::type(),
+					typename __make_tuple_types<tuple, sizeof...(_Tp), sizeof...(_Up)>::type(),
+					static_cast<_Up&&>(__u)...) {}
+
+			template <class ..._Up,
+				typename enable_if
+						<
+							_CheckArgsConstructor<
+								sizeof...(_Up) <= sizeof...(_Tp)
+								&& !_PackExpandsToThisTuple<_Up...>::value
+							>::template __enable_explicit<_Up...>() ||
+							_CheckArgsConstructor<
+								!_EnableImplicitReducedArityExtension
+								&& sizeof...(_Up) < sizeof...(_Tp)
+								&& !_PackExpandsToThisTuple<_Up...>::value
+							>::template __enable_implicit<_Up...>(),
+							bool
+						>::type = false
+				>
+			inline constexpr explicit tuple(_Up&&... __u)
+				/* noexcept((
+					is_nothrow_constructible<_BaseT,
+						typename __make_tuple_indices<sizeof...(_Up)>::type,
+						typename __make_tuple_types<tuple, sizeof...(_Up)>::type,
+						typename __make_tuple_indices<sizeof...(_Tp), sizeof...(_Up)>::type,
+						typename __make_tuple_types<tuple, sizeof...(_Tp), sizeof...(_Up)>::type,
+						_Up...
+					>::value
+				)) */
+				: __base_(typename __make_tuple_indices<sizeof...(_Up)>::type(),
+						typename __make_tuple_types<tuple, sizeof...(_Up)>::type(),
+						typename __make_tuple_indices<sizeof...(_Tp), sizeof...(_Up)>::type(),
+						typename __make_tuple_types<tuple, sizeof...(_Tp), sizeof...(_Up)>::type(),
+						static_cast<_Up&&>(__u)...) {}
+
+		inline void swap(tuple& __t) /* noexcept(__all<__is_nothrow_swappable<_Tp>::value...>::value) */
+			{__base_.swap(__t.__base_);}
+	};
+
+	template <>
+	class tuple<>
+	{
+	public:
+		inline constexpr tuple() noexcept = default;
+		// template <class _Alloc>
+		// inline tuple(allocator_arg_t, const _Alloc&) _NOEXCEPT {}
+		// template <class _Alloc>
+		// inline tuple(allocator_arg_t, const _Alloc&, const tuple&) _NOEXCEPT {}
+		template <class _Up>
+		inline tuple(array<_Up, 0>) noexcept {}
+		// template <class _Alloc, class _Up>
+		// inline tuple(allocator_arg_t, const _Alloc&, array<_Up, 0>) _NOEXCEPT {}
+		inline void swap(tuple&) noexcept {}
+	};
+}

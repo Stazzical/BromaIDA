@@ -5,6 +5,14 @@
 	template <> struct name<type> : public true_type {}; \
 	template <typename T> inline constexpr bool name ## _v = name<T>::value
 
+#define _GNUSTL_TRAITS_IS_TEMPLATED_TYPE(name, type) \
+	template <typename T> struct name : public false_type {}; \
+	template <typename T> struct name<type> : public true_type {}; \
+	template <typename T> inline constexpr bool name ## _v = name<T>::value
+
+#define _GNUSTL_EXTEND_TRAITS_IS_TEMPLATED_TYPE(name, type) \
+	template <typename T> struct name<type> : public true_type {}
+
 #define _GNUSTL_TRAITS_HAS_PROPERTY(name, ev) \
 	template <typename T> struct name : public integral_constant<bool, ev(T)> {}; \
 	template <typename T> inline constexpr bool name ## _v = ev(T);
@@ -12,22 +20,6 @@
 
 namespace std
 {
-	template <class...>
-	using __void_t = void;
-
-
-	template <class _Tp> struct remove_reference        { using type = _Tp; };
-	template <class _Tp> struct remove_reference<_Tp&>  { using type = _Tp; };
-	template <class _Tp> struct remove_reference<_Tp&&> { using type = _Tp; };
-	template <class _Tp>
-	using remove_reference_t = typename remove_reference<_Tp>::type;
-
-	template <class _Tp> struct remove_const { using type = _Tp; };
-	template <class _Tp> struct remove_const<const _Tp> { using type = _Tp; };
-	template <class _Tp>
-	using remove_const_t = typename remove_const<_Tp>::type;
-
-
 	template <class _Tp>
 	struct __type_identity { typedef _Tp type; };
 	template <class _Tp>
@@ -35,6 +27,82 @@ namespace std
 
 	template<class _Tp> struct type_identity { typedef _Tp type; };
 	template<class _Tp> using type_identity_t = typename type_identity<_Tp>::type;
+
+	namespace __detail
+	{
+		template<class T>
+		auto try_add_lvalue_reference(int) -> type_identity<T&>;
+		template<class T>
+		auto try_add_lvalue_reference(...) -> type_identity<T>;
+
+		template<class T>
+		auto try_add_rvalue_reference(int) -> type_identity<T&&>;
+		template<class T>
+		auto try_add_rvalue_reference(...) -> type_identity<T>;
+	}
+
+	template<class T>
+	struct add_lvalue_reference
+		: decltype(__detail::try_add_lvalue_reference<T>(0)) {};
+	
+	template<class T>
+	struct add_rvalue_reference
+		: decltype(__detail::try_add_rvalue_reference<T>(0)) {};
+		
+	template<typename T>
+	typename std::add_rvalue_reference<T>::type declval() noexcept
+	{
+		static_assert(false, "declval() called");
+	}
+
+	template<class T> struct add_const { typedef const T type; };
+	template <class T>
+	using add_const_t = typename add_const<T>::type;
+
+	template<class T> struct add_volatile { typedef volatile T type; };
+	template <class T>
+	using add_volatile_t = typename add_volatile<T>::type;
+
+	template<class T> struct add_cv { typedef const volatile T type; };
+	template <class T>
+	using add_cv_t = typename add_cv<T>::type;
+	
+
+	template <class...>
+	using __void_t = void;
+
+	template <class T> struct remove_reference        { using type = T; };
+	template <class T> struct remove_reference<T&>  { using type = T; };
+	template <class T> struct remove_reference<T&&> { using type = T; };
+	template <class T>
+	using remove_reference_t = typename remove_reference<T>::type;
+
+	template<class T> struct remove_cv { typedef T type; };
+	template<class T> struct remove_cv<const T> { typedef T type; };
+	template<class T> struct remove_cv<volatile T> { typedef T type; };
+	template<class T> struct remove_cv<const volatile T> { typedef T type; };
+	template <class T>
+	using remove_cv_t = typename remove_cv<T>::type;
+
+	template<class T> struct remove_cvref { typedef T type; };
+	template<class T> struct remove_cvref<const T> { typedef T type; };
+	template<class T> struct remove_cvref<const T&> { typedef T type; };
+	template<class T> struct remove_cvref<volatile T> { typedef T type; };
+	template<class T> struct remove_cvref<volatile T&> { typedef T type; };
+	template<class T> struct remove_cvref<const volatile T> { typedef T type; };
+	template<class T> struct remove_cvref<const volatile T&> { typedef T type; };
+	template <class T>
+	using remove_cvref_t = typename remove_cvref<T>::type;
+	
+	template<class T> struct remove_const { typedef T type; };
+	template<class T> struct remove_const<const T> { typedef T type; };
+	template <class T>
+	using remove_const_t = typename remove_const<T>::type;
+	
+	template<class T> struct remove_volatile { typedef T type; };
+	template<class T> struct remove_volatile<volatile T> { typedef T type; };
+	template <class T>
+	using remove_volatile_t = typename remove_volatile<T>::type;
 
 
 	template <class _Ty, _Ty _Val>
@@ -58,10 +126,95 @@ namespace std
 
 	_GNUSTL_TRAITS_IS_TYPE(is_void, void);
 
+	_GNUSTL_TRAITS_IS_TEMPLATED_TYPE(is_const, const T);
+	_GNUSTL_TRAITS_IS_TEMPLATED_TYPE(is_volatile, volatile T);
+	_GNUSTL_TRAITS_IS_TEMPLATED_TYPE(is_reference, T&);
+	_GNUSTL_EXTEND_TRAITS_IS_TEMPLATED_TYPE(is_reference, const T&);
+	_GNUSTL_EXTEND_TRAITS_IS_TEMPLATED_TYPE(is_reference, volatile T&);
+	_GNUSTL_EXTEND_TRAITS_IS_TEMPLATED_TYPE(is_reference, const volatile T&);
+
 	_GNUSTL_TRAITS_HAS_PROPERTY(is_empty, __is_empty);
 	_GNUSTL_TRAITS_HAS_PROPERTY(is_final, __is_final);
 	_GNUSTL_TRAITS_HAS_PROPERTY(is_enum, __is_enum);
+
+	template <typename T, typename U> struct is_same : public false_type {};
+	template <typename T> struct is_same<T, T> : public false_type {};
+	template <typename T, typename U> inline constexpr bool is_same_v = is_same<T, U>::value;
+
+	template <class _Tp, class _Up>
+	using _IsSame = integral_constant<bool, is_same_v<_Tp, _Up>>;
+	template <class _Tp, class _Up>
+	using _IsNotSame = integral_constant<bool, !is_same_v<_Tp, _Up>>;
+
+	template <bool, class _Tp = void> struct enable_if {};
+	template <class _Tp> struct enable_if<true, _Tp> {typedef _Tp type;};
+	template <bool _Bp, class _Tp = void> using enable_if_t = typename enable_if<_Bp, _Tp>::type;
+
+
+	template <class _Tp>
+	struct __libcpp_is_final : public integral_constant<bool, __is_final(_Tp)> {};
+
+
+	namespace __detail
+	{
+		struct __nat
+		{
+			__nat() = delete;
+			__nat(const __nat&) = delete;
+			__nat& operator=(const __nat&) = delete;
+			~__nat() = delete;
+		};
+
+		template <class _Tp, class _Up = _Tp,
+          bool _NotVoid = !is_void<_Tp>::value && !is_void<_Up>::value>
+		struct __swappable_with
+		{
+			template <class _LHS, class _RHS>
+			static decltype(swap(std::declval<_LHS>(), std::declval<_RHS>()))
+			__test_swap(int);
+			template <class, class>
+			static __nat __test_swap(long);
+
+			// Extra parens are needed for the C++03 definition of decltype.
+			typedef decltype((__test_swap<_Tp, _Up>(0))) __swap1;
+			typedef decltype((__test_swap<_Up, _Tp>(0))) __swap2;
+
+			static const bool value = _IsNotSame<__swap1, __nat>::value
+								&& _IsNotSame<__swap2, __nat>::value;
+		};
+
+		template <class _Tp, class _Up>
+		struct __swappable_with<_Tp, _Up,  false> : false_type {};
+
+		template <class _Tp, class _Up = _Tp, bool _Swappable = __swappable_with<_Tp, _Up>::value>
+		struct __nothrow_swappable_with {
+		static const bool value =
+			noexcept(swap(std::declval<_Tp>(), std::declval<_Up>()))
+		&&  noexcept(swap(std::declval<_Up>(), std::declval<_Tp>()));
+		};
+	}
+
+	template <class _Tp, class _Up = _Tp, bool _Swappable = __detail::__swappable_with<_Tp, _Up>::value>
+	struct __nothrow_swappable_with {
+	static const bool value =
+	#ifndef _LIBCPP_HAS_NO_NOEXCEPT
+		noexcept(swap(std::declval<_Tp>(), std::declval<_Up>()))
+	&&  noexcept(swap(std::declval<_Up>(), std::declval<_Tp>()));
+	#else
+		false;
+	#endif
+	};
+
+	template <class _Tp, class _Up>
+	struct __nothrow_swappable_with<_Tp, _Up, false> : false_type {};
+
+	template <class _Tp>
+	struct __is_nothrow_swappable
+		: public integral_constant<bool, __detail::__nothrow_swappable_with<_Tp&>::value>
+	{};
 }
 
+#undef _GNUSTL_TRAITS_IS_TYPE
+#undef _GNUSTL_TRAITS_IS_TEMPLATED_TYPE
 #undef _GNUSTL_TRAITS_IS_TYPE
 #undef _GNUSTL_TRAITS_HAS_PROPERTY

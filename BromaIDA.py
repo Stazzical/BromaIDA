@@ -1,11 +1,4 @@
 # flake8-in-file-ignores: noqa: E402
-VERSION = "7.0.3"
-__AUTHOR__ = "SpaghettDev"
-
-PLUGIN_NAME = "BromaIDA"
-PLUGIN_HOTKEY = "Ctrl+Shift+B"
-
-
 from pathlib import Path
 
 from idaapi import (
@@ -25,6 +18,13 @@ from broma_ida.data.data_manager import DataManager
 
 from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.main_form import MainForm
+
+
+VERSION = "7.2.0"
+__AUTHOR__ = "SpaghettDev"
+
+PLUGIN_NAME = "BromaIDA"
+PLUGIN_HOTKEY = "Ctrl+Shift+B"
 
 
 def on_import(form: MainForm, code: int = 0):
@@ -131,7 +131,10 @@ class BromaIDAPlugin(ida_plugin_t):
     def run(self, arg):
         """Ran on "File -> Script File" (shocker)
         (does not work because this plugin has multiple py files)"""
-        bida_main()
+        try:
+            bida_main()
+        except BaseException as e:
+            ida_msg(f"[!] BromaIDA: Fatal error: {e}\n")
 
     def _register_action(self):
         """Registers BromaIDA's hotkey"""

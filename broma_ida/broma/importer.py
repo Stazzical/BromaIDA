@@ -27,6 +27,11 @@ from ida_typeinf import (
     tinfo_t as ida_tinfo_t
 )
 from idautils import Names
+from ida_dirtree import (
+    get_std_dirtree,
+    direntry_t as ida_direntry_t,
+    DIRTREE_LOCAL_TYPES
+)
 
 from re import sub
 from pathlib import Path
@@ -37,7 +42,11 @@ from pybroma import Root, Class
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.codegen import BromaCodegen
-from broma_ida.utils import path_exists, stop, IDAUtils, HAS_IDACLANG
+from broma_ida.utils import (
+    path_exists, stop,
+    IDAUtils, DirtreeEntry,
+    HAS_IDACLANG
+)
 
 from broma_ida.data.data_manager import DataManager
 
@@ -67,12 +76,12 @@ class BIUtils:
     }
 
     _plat_to_hss_size: dict[BROMA_PLATFORMS, int] = {
-        "win": 0x8D0,
-        "imac": 0x738,
-        "m1": 0x738,
-        "ios": 0x738,
-        "android32": 0x4EC,
-        "android64": 0x9D8
+        "win": 0x8E0,
+        "imac": 0x750,
+        "m1": 0x750,
+        "ios": 0x750,
+        "android32": 0x504,
+        "android64": 0xA08
     }
 
     _plat_to_stl_name: dict[BROMA_PLATFORMS, str] = {
@@ -152,8 +161,9 @@ class BIUtils:
                     "Mismatch in STL types! "
                     "Classes will not be imported!\n"
                     "To fix this, go to the local types window, "
-                    "delete all Cocos and GD types\n"
-                    "(as well as holy_shit struct) then save the IDB."
+                    "delete BromaIDA folder "
+                    "(you might have to right-click > Show folders)\n"
+                    "then save the IDB."
                 )
                 return False
 
@@ -168,8 +178,9 @@ class BIUtils:
                 "Mismatch in cocos2d types! "
                 "Classes will not be imported!\n"
                 "To fix this, go to the local types window, "
-                "and delete all Cocos and GD types\n"
-                "(as well as holy_shit struct) then save the IDB."
+                "delete BromaIDA folder "
+                "(you might have to right-click > Show folders)\n"
+                "then save the IDB."
             )
             return False
 
@@ -240,6 +251,51 @@ class BIUtils:
             stop()
 
         DataManager().set(dm_key, dir_str)
+
+    @staticmethod
+    def move_type_entries_to_bromaida() -> None:
+        """Moves imported type entries to /BromaIDA in the local types tree"""
+        dirtree = get_std_dirtree(DIRTREE_LOCAL_TYPES)
+        entries = IDAUtils.get_dirtree_entries(
+            DIRTREE_LOCAL_TYPES, "/"
+        )
+        found_first = False
+
+        for _, path in entries:
+            if path in \
+                    ["/SearchType", "/cocos2d::CCNode", "/cocos2d::CCLayer"]:
+                found_first = True
+
+            if path.count("/") > 1 or not found_first:
+                continue
+
+            dirtree.rename(f"{path}", f"/BromaIDA{path}")
+
+            # this will add other entries added after imported types
+            # nothing much i can do abt that :/
+
+    @staticmethod
+    def dirtree_is_bromaida_entry(de: ida_direntry_t, ep: str) -> bool:
+        """Predicate to check if a dirtree entry is in /BromaIDA
+
+        Args:
+            de (ida_direntry_t):
+            ep (str):
+
+        Returns:
+            bool
+        """
+        return ep.startswith("/BromaIDA/")
+
+    @staticmethod
+    def delete_dirtree_entry(de: ida_direntry_t, ep: str) -> bool:
+        """Deletes a dirtree entry
+
+        Args:
+            de (ida_direntry_t):
+            ep (str):
+        """
+        return get_std_dirtree(DIRTREE_LOCAL_TYPES).unlink(ep) == 0x0
 
     # Signature stuff
 
@@ -399,6 +455,7 @@ class BromaImporter:
     _target_platform: BROMA_PLATFORMS
     _file_path: str
     _has_types: bool = False
+    _imported_types: list[DirtreeEntry] = []
 
     bindings: deque[Binding] = deque()
     duplicates: dict[int, list[Binding]] = {}
@@ -423,6 +480,44 @@ class BromaImporter:
         ).write()
 
         return True
+
+    def _pre_import_types(self):
+        """Pre-import types hook"""
+        dirtree = get_std_dirtree(DIRTREE_LOCAL_TYPES)
+        self._imported_types = IDAUtils.get_dirtree_entries(dirtree, "/")
+
+        mkdir_ret = dirtree.mkdir("/BromaIDA")
+
+        for _, path in self._imported_types:
+            if path in \
+                    ["/SearchType", "/cocos2d::CCNode", "/cocos2d::CCLayer"]:
+                print("[+] BromaImporter: Moving existing types to /BromaIDA")
+                BIUtils.move_type_entries_to_bromaida()
+                break
+
+        if mkdir_ret != 0:
+            IDAUtils.visit_dirtree(
+                dirtree,
+                BIUtils.dirtree_is_bromaida_entry,
+                BIUtils.delete_dirtree_entry
+            )
+
+    def _post_import_types(self):
+        """Post-import types hook"""
+        new_types = IDAUtils.get_dirtree_entries(
+            DIRTREE_LOCAL_TYPES, "/"
+        )
+        old_types_paths = [path for _, path in self._imported_types]
+        self._imported_types = []
+
+        # direntry_t is unhashable so we manually deduplicate
+        for _, path in new_types:
+            if path not in old_types_paths:
+                self._imported_types.append((_, path))
+
+        IDAUtils.chdir_dirtree_entries(
+            DIRTREE_LOCAL_TYPES, "/BromaIDA", self._imported_types
+        )
 
     def __init__(self, platform: BROMA_PLATFORMS, filepath: str):
         """Initializes a BromaImporter instance
@@ -459,17 +554,6 @@ class BromaImporter:
             last_broma_info = DataManager().get(
                 "last_broma_info", (self._target_platform, "")
             )
-
-            # Python>local_t_tree = ida_dirtree.get_std_dirtree(
-            #   ida_dirtree.DIRTREE_LOCAL_TYPES
-            # )
-            # Python>local_t_tree.mkdir("test")
-            # Python>local_t_tree.chdir("test")
-            # 0x2
-            # Python>local_t_tree.getcwd()
-            # '/test'
-            # Python>local_t_tree.link("_GUID")
-            # 0x0
 
             if last_broma_info[0] == self._target_platform and \
                     last_broma_info[1] != "":
@@ -508,6 +592,8 @@ class BromaImporter:
 
                 show_wait_box("HIDECANCEL\nImporting types...")
 
+                self._pre_import_types()
+
                 parse_decls_for_srclang(
                     SRCLANG_CPP,
                     None,
@@ -522,10 +608,9 @@ class BromaImporter:
 
                 self._has_types = True
             else:
-                # TODO: check if idb already has types, if so set this to True
-                # so you dont HAVE to import types to be able to modify
-                # function signatures
-                self._has_types = False
+                self._has_types = len(IDAUtils.get_dirtree_entries(
+                    DIRTREE_LOCAL_TYPES, "/BromaIDA"
+                )) != 0
 
         if self._target_platform.startswith("android"):
             for class_name, broma_class in root.classesAsDict().items():
@@ -583,7 +668,7 @@ class BromaImporter:
                         print(
                             "[!] BromaImporter: Duplicate binding! "
                             f"({class_name}::{function.name} "
-                            f"and {dup_binding.short_info}"
+                            f"and {dup_binding.short_info})"
                         )
                         self.bindings.remove(dup_binding)
                         self.duplicates[func_addr] = []
@@ -598,6 +683,9 @@ class BromaImporter:
                     self.bindings.append(
                         Binding.from_pybroma(class_name, function_field)
                     )
+
+        if HAS_IDACLANG and import_types and self._has_types:
+            self._post_import_types()
 
         print(
             f"\n\n[+] BromaImporter: Read {len(self.bindings)} "

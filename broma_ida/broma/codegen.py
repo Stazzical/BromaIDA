@@ -1,3 +1,5 @@
+from typing import Literal
+from io import TextIOWrapper
 from pathlib import Path
 
 from pybroma import Class, Root
@@ -63,35 +65,11 @@ class BromaCodegen:
                 })
             )
 
-            with open(self._path / "enums.hpp") as enums:
-                f.write("// enums.hpp\n")
-                f.writelines(enums.readlines())
-                f.write("\n\n")
-
-            with open(self._path / "stl_includes.hpp") as stl_includes:
-                f.write("// stl_includes.hpp\n")
-                f.writelines(stl_includes.readlines())
-                f.write("\n\n")
-
-            with open(self._path / "cocos2d_geometry.hpp") as cocos2d_geometry:
-                f.write("// cocos2d_geometry.hpp\n")
-                f.writelines(cocos2d_geometry.readlines())
-                f.write("\n\n")
-
-            with open(self._path / "cocos2d.hpp") as cocos:
-                f.write("// cocos2d.hpp\n")
-                f.writelines(self._filter_relative_includes(cocos.readlines()))
-                f.write("\n\n")
-
-            with open(self._path / "fmod.hpp") as fmod:
-                f.write("// fmod.hpp\n")
-                f.writelines(fmod.readlines())
-                f.write("\n\n")
-
-            with open(self._path / "helpers.hpp") as helpers:
-                f.write("// helpers.hpp\n")
-                f.writelines(helpers.readlines())
-                f.write("\n\n")
+            self._copy_content(f, "enums.hpp")
+            self._copy_content(f, "cocos2d.hpp", "parse")
+            self._copy_content(f, "fmod.hpp")
+            self._copy_content(f, "fmod_gd.hpp")
+            self._copy_content(f, "helpers.hpp")
 
             f.flush()
 
@@ -167,13 +145,29 @@ class BromaCodegen:
             # Some STL types need declaration of either cocos2d or
             # broma classes, so we put this at the very bottom
             # of the codegenned header
+            self._copy_content(f, "stl_types.hpp", "filter")
 
-            with open(self._path / "stl_types.hpp") as stl_types:
-                f.write("// stl_types.hpp\n")
-                f.writelines(
-                    self._filter_relative_includes(stl_types.readlines())
-                )
-                f.write("\n\n")
+    def _copy_content(
+            self, file: TextIOWrapper, fname: str,
+            incl_mode: Literal["parse", "filter", ""] = ""
+    ) -> None:
+        """Quick writes a file to another file
+
+        Args:
+            file (TextIOWrapper): File to write to
+            fname (str): Filename to copy from
+            incl_mode (Literal["parse", "filter", ""]):
+                Whether to parse, filter, or do nothing to relative includes
+
+        """
+        with open(self._path / fname) as fr:
+            file.write(f"// {fname}\n")
+            file.writelines({
+                "filter": self._filter_relative_includes,
+                "parse": self._parse_relative_includes,
+                "": lambda t: t
+            }[incl_mode](fr.readlines()))
+            file.write("\n\n")
 
     def _get_bromaida_platform_macro(self) -> str:
         """Gets the BromaIDA platform macro name (shocker)"""
@@ -202,5 +196,24 @@ class BromaCodegen:
         for i, e in enumerate(lines):
             if e.startswith('#include "'):
                 lines[i] = f"// {lines[i]}"
+
+        return lines
+
+    def _parse_relative_includes(self, lines: list[str]) -> list[str]:
+        """Parses and includes relative includes from a list of lines
+
+        Args:
+            lines (list[str])
+
+        Returns:
+            list[str]
+        """
+        for i, e in enumerate(lines):
+            if e.startswith('#include "'):
+                lines[i] = f"// {lines[i]}"
+
+                include_path = e.split('"')[1]
+                with open(self._path / include_path) as fr:
+                    lines[i+1:i+1] = [*fr.readlines(), "\n\n"]
 
         return lines

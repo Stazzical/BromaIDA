@@ -1,0 +1,332 @@
+#pragma once
+
+#include "utility"
+#include "type_traits"
+
+namespace std
+{
+	template<typename... _Elements>
+    class tuple;
+
+	template<std::size_t _Idx, typename _Head, bool _IsEmptyNotFinal>
+    struct _Head_base;
+
+	template<std::size_t _Idx, typename _Head>
+	struct _Head_base<_Idx, _Head, true>
+		: public _Head
+	{
+		constexpr _Head_base()
+		: _Head() { }
+
+		constexpr _Head_base(const _Head& __h)
+		: _Head(__h) { }
+
+		constexpr _Head_base(const _Head_base&) = default;
+		constexpr _Head_base(_Head_base&&) = default;
+
+		template<typename _UHead>
+		constexpr _Head_base(_UHead&& __h)
+			: _Head(std::forward<_UHead>(__h)) { }
+
+		static constexpr _Head&
+		_M_head(_Head_base& __b) noexcept { return __b; }
+
+		static constexpr const _Head&
+		_M_head(const _Head_base& __b) noexcept { return __b; }
+	};
+
+	template<std::size_t _Idx, typename _Head>
+	struct _Head_base<_Idx, _Head, false>
+	{
+		constexpr _Head_base()
+			: _M_head_impl() { }
+
+		constexpr _Head_base(const _Head& __h)
+			: _M_head_impl(__h) { }
+
+		constexpr _Head_base(const _Head_base&) = default;
+		constexpr _Head_base(_Head_base&&) = default;
+
+		static constexpr _Head& _M_head(_Head_base& __b) noexcept { return __b._M_head_impl; }
+
+		static constexpr const _Head& _M_head(const _Head_base& __b) noexcept { return __b._M_head_impl; }
+
+		_Head _M_head_impl;
+	};
+
+	template<std::size_t _Idx, typename... _Elements>
+	struct _Tuple_impl;
+
+	template<std::size_t _Idx>
+	struct _Tuple_impl<_Idx>
+	{
+		template<std::size_t, typename...> friend class _Tuple_impl;
+
+		_Tuple_impl() = default;
+
+	protected:
+		void _M_swap(_Tuple_impl&) noexcept { /* no-op */ }
+	};
+
+	template<typename _Tp>
+	struct __is_empty_non_tuple : is_empty<_Tp> { };
+
+	// Using EBO for elements that are tuples causes ambiguous base errors.
+	template<typename _El0, typename... _El>
+	struct __is_empty_non_tuple<tuple<_El0, _El...>> : false_type { };
+
+	// Use the Empty Base-class Optimization for empty, non-final types.
+	template<typename _Tp>
+	using __empty_not_final
+	= typename conditional<__is_final(_Tp), false_type,
+				 __is_empty_non_tuple<_Tp>>::type;
+
+	template<std::size_t _Idx, typename _Head, typename... _Tail>
+	struct _Tuple_impl<_Idx, _Head, _Tail...>
+	: public _Tuple_impl<_Idx + 1, _Tail...>,
+		private _Head_base<_Idx, _Head, __empty_not_final<_Head>::value>
+	{
+		template<std::size_t, typename...> friend class _Tuple_impl;
+
+		typedef _Tuple_impl<_Idx + 1, _Tail...> _Inherited;
+		typedef _Head_base<_Idx, _Head, __empty_not_final<_Head>::value> _Base;
+
+		static constexpr _Head&
+		_M_head(_Tuple_impl& __t) noexcept { return _Base::_M_head(__t); }
+
+		static constexpr const _Head&
+		_M_head(const _Tuple_impl& __t) noexcept { return _Base::_M_head(__t); }
+
+		static constexpr _Inherited&
+		_M_tail(_Tuple_impl& __t) noexcept { return __t; }
+
+		static constexpr const _Inherited&
+		_M_tail(const _Tuple_impl& __t) noexcept { return __t; }
+
+		constexpr _Tuple_impl()
+		: _Inherited(), _Base() { }
+
+		explicit
+		constexpr _Tuple_impl(const _Head& __head, const _Tail&... __tail)
+		: _Inherited(__tail...), _Base(__head) { }
+
+		template<typename _UHead, typename... _UTail, typename = typename
+				 enable_if<sizeof...(_Tail) == sizeof...(_UTail)>::type>
+		explicit
+		constexpr _Tuple_impl(_UHead&& __head, _UTail&&... __tail)
+		: _Inherited(std::forward<_UTail>(__tail)...),
+			_Base(std::forward<_UHead>(__head)) { }
+
+		constexpr _Tuple_impl(const _Tuple_impl&) = default;
+
+		constexpr
+		_Tuple_impl(_Tuple_impl&& __in)
+		// noexcept(__and_<is_nothrow_move_constructible<_Head>,
+		// 			is_nothrow_move_constructible<_Inherited>>::value)
+		: _Inherited(static_cast<decltype(_M_tail(__in))&&>(_M_tail(__in))),
+			_Base(std::forward<_Head>(_M_head(__in))) { }
+
+		template<typename... _UElements>
+		constexpr _Tuple_impl(const _Tuple_impl<_Idx, _UElements...>& __in)
+		: _Inherited(_Tuple_impl<_Idx, _UElements...>::_M_tail(__in)),
+			_Base(_Tuple_impl<_Idx, _UElements...>::_M_head(__in)) { }
+
+		template<typename _UHead, typename... _UTails>
+		constexpr _Tuple_impl(_Tuple_impl<_Idx, _UHead, _UTails...>&& __in)
+		: _Inherited(
+			 static_cast<decltype(_Tuple_impl<_Idx, _UHead, _UTails...>::_M_tail(__in))&&>(_Tuple_impl<_Idx, _UHead, _UTails...>::_M_tail(__in))),
+			_Base(std::forward<_UHead>
+		(_Tuple_impl<_Idx, _UHead, _UTails...>::_M_head(__in))) { }
+
+		_Tuple_impl&
+		operator=(const _Tuple_impl& __in)
+		{
+			_M_head(*this) = _M_head(__in);
+			_M_tail(*this) = _M_tail(__in);
+			return *this;
+		}
+
+		_Tuple_impl&
+		operator=(_Tuple_impl&& __in)
+			// noexcept(__and_<is_nothrow_move_assignable<_Head>,
+			// 			is_nothrow_move_assignable<_Inherited>>::value)
+		{
+			_M_head(*this) = std::forward<_Head>(_M_head(__in));
+			_M_tail(*this) = static_cast<decltype(_M_tail(__in))&&>(_M_tail(__in));
+			return *this;
+		}
+
+		template<typename... _UElements>
+		_Tuple_impl&
+		operator=(const _Tuple_impl<_Idx, _UElements...>& __in)
+		{
+			_M_head(*this) = _Tuple_impl<_Idx, _UElements...>::_M_head(__in);
+			_M_tail(*this) = _Tuple_impl<_Idx, _UElements...>::_M_tail(__in);
+			return *this;
+		}
+
+		template<typename _UHead, typename... _UTails>
+		_Tuple_impl&
+		operator=(_Tuple_impl<_Idx, _UHead, _UTails...>&& __in)
+		{
+			_M_head(*this) = std::forward<_UHead>
+			(_Tuple_impl<_Idx, _UHead, _UTails...>::_M_head(__in));
+			_M_tail(*this) = 
+			static_cast<decltype(_Tuple_impl<_Idx, _UHead, _UTails...>::_M_tail(__in))&&>(_Tuple_impl<_Idx, _UHead, _UTails...>::_M_tail(__in));
+			return *this;
+		}
+
+	protected:
+		// void
+		// _M_swap(_Tuple_impl& __in)
+		// noexcept(noexcept(swap(std::declval<_Head&>(),
+		// 		 std::declval<_Head&>()))
+		// 	 && noexcept(_M_tail(__in)._M_swap(_M_tail(__in))))
+		// {
+		// 	// using std::swap;
+		// 	swap(_M_head(*this), _M_head(__in));
+		// 	_Inherited::_M_swap(_M_tail(__in));
+		// }
+	};
+
+	/// Primary class template, tuple
+	template<typename... _Elements>
+	class tuple : public _Tuple_impl<0, _Elements...>
+	{
+		typedef _Tuple_impl<0, _Elements...> _Inherited;
+
+	public:
+		constexpr tuple()
+			: _Inherited() { }
+
+		explicit
+		constexpr tuple(const _Elements&... __elements)
+			: _Inherited(__elements...) { }
+
+		constexpr tuple(const tuple&) = default;
+
+		constexpr tuple(tuple&&) = default;
+
+		tuple&
+		operator=(const tuple& __in)
+		{
+			static_cast<_Inherited&>(*this) = __in;
+			return *this;
+		}
+
+		tuple&
+		operator=(tuple&& __in)
+		// noexcept(is_nothrow_move_assignable<_Inherited>::value)
+		{
+			static_cast<_Inherited&>(*this) = static_cast<tuple&&>(__in);
+			return *this;
+		}
+
+		template<typename... _UElements, typename = typename
+			 enable_if<sizeof...(_UElements)
+			 == sizeof...(_Elements)>::type>
+		tuple&
+		operator=(const tuple<_UElements...>& __in)
+		{
+			static_cast<_Inherited&>(*this) = __in;
+			return *this;
+		}
+
+		template<typename... _UElements, typename = typename
+			 enable_if<sizeof...(_UElements)
+			 == sizeof...(_Elements)>::type>
+		tuple&
+		operator=(tuple<_UElements...>&& __in)
+		{
+			static_cast<_Inherited&>(*this) = static_cast<decltype(__in)&&>(__in);
+			return *this;
+		}
+
+		void
+		swap(tuple& __in)
+		noexcept(noexcept(__in._M_swap(__in)))
+		{ _Inherited::_M_swap(__in); }
+	};
+
+	// Explicit specialization, zero-element tuple.
+	template<>
+	class tuple<>
+	{
+	public:
+		void swap(tuple&) noexcept { /* no-op */ }
+	};
+
+	/// Partial specialization, 2-element tuple.
+	/// Includes construction and assignment from a pair.
+	template<typename _T1, typename _T2>
+	class tuple<_T1, _T2> : public _Tuple_impl<0, _T1, _T2>
+	{
+		typedef _Tuple_impl<0, _T1, _T2> _Inherited;
+
+	public:
+		constexpr tuple()
+		: _Inherited() { }
+
+		explicit
+		constexpr tuple(const _T1& __a1, const _T2& __a2)
+			: _Inherited(__a1, __a2) { }
+
+		constexpr tuple(const tuple&) = default;
+
+		constexpr tuple(tuple&&) = default;
+
+		tuple&
+		operator=(const tuple& __in)
+		{
+			static_cast<_Inherited&>(*this) = __in;
+			return *this;
+		}
+
+		tuple&
+		operator=(tuple&& __in)
+		// noexcept(is_nothrow_move_assignable<_Inherited>::value)
+		{
+			static_cast<_Inherited&>(*this) = static_cast<tuple&&>(__in);
+			return *this;
+		}
+
+		template<typename _U1, typename _U2>
+		tuple&
+		operator=(const tuple<_U1, _U2>& __in)
+		{
+			static_cast<_Inherited&>(*this) = __in;
+			return *this;
+		}
+
+		template<typename _U1, typename _U2>
+		tuple&
+		operator=(tuple<_U1, _U2>&& __in)
+		{
+			static_cast<_Inherited&>(*this) = static_cast<decltype(__in)&&>(__in);
+			return *this;
+		}
+
+		template<typename _U1, typename _U2>
+		tuple&
+		operator=(const pair<_U1, _U2>& __in)
+		{
+			this->_M_head(*this) = __in.first;
+			this->_M_tail(*this)._M_head(*this) = __in.second;
+			return *this;
+		}
+
+		template<typename _U1, typename _U2>
+		tuple&
+		operator=(pair<_U1, _U2>&& __in)
+		{
+			this->_M_head(*this) = std::forward<_U1>(__in.first);
+			this->_M_tail(*this)._M_head(*this) = std::forward<_U2>(__in.second);
+			return *this;
+		}
+
+		void
+		swap(tuple& __in)
+		noexcept(noexcept(__in._M_swap(__in)))
+		{ _Inherited::_M_swap(__in); }
+	};
+}
