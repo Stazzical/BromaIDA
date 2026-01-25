@@ -27,7 +27,7 @@
 	Modified by SpaghettDev
  ****************************************************************************/
 
-// based on geode-sdk/geode#5bffdf0fe2c1d82a41f16638a3075bf297c69052
+// based on geode-sdk/geode#4cd3dbdd717874b5d3fad47e5af2f684be998acd
 
 // #include <cstdint>
 // #include <climits>
