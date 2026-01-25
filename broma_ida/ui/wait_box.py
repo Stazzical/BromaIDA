@@ -26,7 +26,9 @@ class WaitBox:
                 Defaults to True.
         """
         show_wait_box(
-            f"{'HIDECANCEL\n' if self.hide_cancel else ''}{self.message}"
+            # chr 10 is \n, backwards compat with python < 3.12
+            f"{f'HIDECANCEL{chr(10)}' if self.hide_cancel else ''}"
+            f"{self.message}"
         )
 
     def __exit__(

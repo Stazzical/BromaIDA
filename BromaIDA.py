@@ -20,7 +20,7 @@ from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.main_form import MainForm
 
 
-VERSION = IDAUtils.SCRIPT_VERSION = "7.3.0"
+VERSION = IDAUtils.SCRIPT_VERSION = "7.3.1"
 __AUTHOR__ = "SpaghettDev"
 
 PLUGIN_NAME = "BromaIDA"
