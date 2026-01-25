@@ -8,7 +8,7 @@ Parses a Broma file and exports the bindings into a Broma file/imports the bindi
 
 ## Requirements
 
-- IDA 7.0 or higher
+- IDA 7.0 or higher (v8.3, v9.0 and v9.2 were tested)
 - IDAPython
 - Python v3.10.0+ (tested with v3.11.9)
 - PyBroma
