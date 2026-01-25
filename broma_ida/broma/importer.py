@@ -7,15 +7,11 @@ from idaapi import (
     BADADDR
 )
 from idc import (
-    get_name as get_ea_name, get_func_flags, get_func_cmt,
-    set_func_cmt, SetType,
-    FUNC_LIB
+    get_name as get_ea_name, get_func_cmt,
+    set_func_cmt, SetType
 )
 from ida_funcs import get_func, add_func
-from ida_kernwin import (
-    show_wait_box, hide_wait_box, warning as ida_warning,
-    ASKBTN_BTN1
-)
+from ida_kernwin import warning as ida_warning, ASKBTN_BTN1
 try:
     from ida_typeinf import get_ordinal_qty
 except ImportError:
@@ -53,11 +49,13 @@ from broma_ida.data.data_manager import DataManager
 from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.directory_input_form import DirectoryInputForm
 from broma_ida.ui.ask_popup import AskPopup
+from broma_ida.ui.wait_box import WaitBox
+from broma_ida.ui.temp_jump_to_address import TempJumpToAddress
 
 if HAS_IDACLANG:
     from ida_srclang import (
-        set_parser_argv, parse_decls_for_srclang,
-        SRCLANG_CPP
+        set_parser_argv, parse_decls_with_parser,
+        select_parser_by_name as select_srclang_parser_by_name
     )
 
 
@@ -576,9 +574,12 @@ class BromaImporter:
         if HAS_IDACLANG and import_types:
             if BIUtils.verify_types(self._target_platform) and \
                     self._codegen_classes(root.classesAsDict()):
+                srclang_parser = IDAUtils.get_srclang_parser()
+                select_srclang_parser_by_name(srclang_parser)
+
                 if DataManager().get("set_default_parser_args"):
                     set_parser_argv(
-                        "clang",
+                        srclang_parser,
                         BIUtils.get_parser_argv(self._target_platform)
                     )
 
@@ -590,21 +591,18 @@ class BromaImporter:
                     "OK"
                 ).show()
 
-                show_wait_box("HIDECANCEL\nImporting types...")
+                with WaitBox("Importing types..."):
+                    self._pre_import_types()
 
-                self._pre_import_types()
-
-                parse_decls_for_srclang(
-                    SRCLANG_CPP,
-                    None,
-                    IDAUtils.get_ida_path(
-                        "plugins/broma_ida/types/codegen/"
-                        f"{self._target_platform}.hpp"
-                    ).as_posix(),
-                    True
-                )
-
-                hide_wait_box()
+                    parse_decls_with_parser(
+                        srclang_parser,
+                        None,
+                        IDAUtils.get_ida_path(
+                            "plugins/broma_ida/types/codegen/"
+                            f"{self._target_platform}.hpp"
+                        ).as_posix(),
+                        True
+                    )
 
                 self._has_types = True
             else:
@@ -732,19 +730,46 @@ class BromaImporter:
 
             ida_ea: int = get_imagebase() + binding.address
             ida_name: str = get_ea_name(ida_ea)
-            ida_func_flags: int = get_func_flags(ida_ea)
+            ida_func = get_func(ida_ea)
 
             if ida_name.startswith("loc_"):
                 add_func(ida_ea)
 
-            if ida_func_flags & FUNC_LIB:
+            if IDAUtils.is_library_function(get_func(ida_ea)):
                 print(
                     f"[!] BromaImporter: Tried to rename a library function! "
                     f"({binding.short_info})"
                 )
                 continue
 
-            if get_func(ida_ea).start_ea != ida_ea:
+            # is_library_function can change func name
+            # if it was a false positive
+            ida_name = get_ea_name(ida_ea)
+            ida_func = get_func(ida_ea)
+
+            if ida_func is None:
+                with TempJumpToAddress(ida_ea):
+                    if AskPopup(
+                            f"{hex(ida_ea)} is not marked as a function by "
+                            "IDA.\nWould you like to mark it as a "
+                            "function now?",
+                            "Yes", "No",
+                            icon="INFO"
+                    ).show() == ASKBTN_BTN1:
+                        add_func(ida_ea)
+                        IDAUtils.get_function_info(ida_ea, True)
+                        ida_func = get_func(ida_ea)
+                    else:
+                        continue
+
+            if ida_func is None:
+                print(
+                    f"[!] BromaImporter: Couldn't retrieve function at "
+                    f"{hex(ida_ea)}! ({binding.short_info})"
+                )
+                continue
+
+            if ida_func.start_ea != ida_ea:
                 print(
                     f"[!] BromaImporter: Function is in the middle of "
                     f"another one! ({binding.short_info})"

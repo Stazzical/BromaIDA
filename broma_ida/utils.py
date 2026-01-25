@@ -3,7 +3,8 @@ from functools import cache
 
 from idaapi import (
     get_imagebase, decompile,
-    BADADDR, SN_NOWARN
+    BADADDR, SN_NOWARN,
+    IDA_SDK_VERSION
 )
 from ida_kernwin import ASKBTN_BTN1
 from ida_name import get_name_ea
@@ -12,7 +13,11 @@ from ida_ida import inf_get_filetype, f_PE, f_MACHO, f_ELF
 from ida_segment import get_first_seg
 from ida_bytes import get_dword, get_bytes
 from ida_segment import get_segm_by_sel
-from idc import set_name, selector_by_name, get_idb_path
+from idc import (
+    set_name, selector_by_name, get_idb_path,
+    FUNC_LIB
+)
+from ida_funcs import func_t as ida_func_t
 from ida_typeinf import (
     func_type_data_t as ida_func_type_data_t,
     tinfo_t as ida_tinfo_t
@@ -94,6 +99,11 @@ class IDAUtils:
         "android32": "Android (32 bit)",
         "android64": "Android (64 bit)"
     }
+
+    IDA_VERSION: int = IDA_SDK_VERSION
+
+    # set in BromaIDA.py
+    SCRIPT_VERSION: str
 
     class DirtreeCollector(ida_dirtree_visitor_t):
         def __init__(self, tree: TreeType, path: str, top: bool = True):
@@ -245,6 +255,7 @@ class IDAUtils:
         return platform
 
     @staticmethod
+    @cache
     def get_platform_printable() -> str:
         """Printable platform name
         Returns:
@@ -267,6 +278,39 @@ class IDAUtils:
         hash_str = f"{idb_path}-{idb_binary_md5}".encode()
 
         return sha256(hash_str).hexdigest()
+
+    @staticmethod
+    @cache
+    def get_srclang_parser() -> str:
+        """Gets the current source language parser name.
+
+        Returns:
+            str
+        """
+        if not HAS_IDACLANG:
+            return "none"
+
+        return "clang" if IDAUtils.IDA_VERSION < 900 else "old_clang"
+
+    @staticmethod
+    @cache
+    def get_thunk_size() -> tuple[int] | tuple[int, int]:
+        """Gets the size of a jump thunk in the current binary
+
+        Returns:
+            int
+        """
+        platform = IDAUtils.get_platform()
+
+        # either a jmp or a lea + jmp
+        if platform in ("win"):
+            return 6, 12
+        elif platform in ("imac", "m1", "android32", "ios"):
+            return 12,
+        elif platform == "android64":
+            return 16,
+
+        return -1,
 
     @staticmethod
     def rename_func(addr: int, name: str, max: int = 10) -> bool:
@@ -357,6 +401,34 @@ class IDAUtils:
         xfunc.type.get_func_details(func_info)  # type: ignore
 
         return func_info
+
+    @staticmethod
+    def is_library_function(func: ida_func_t) -> bool:
+        """Checks if a function is a library function.
+        Has some heuristics to detect false library functions.
+
+        Args:
+            func (ida_func_t): The function to check
+
+        Returns:
+            bool
+        """
+        if func is None:
+            return False
+
+        ida_is_lib = bool(func.flags & FUNC_LIB)
+
+        if ida_is_lib and func.size() in IDAUtils.get_thunk_size():
+            return True
+
+        # skimmed thru 2.2082 and 450 seemed to be the size where
+        # library and random garbage funcs became actual functions
+        if IDAUtils.get_platform() == "win":
+            if ida_is_lib and func.size() >= 450:
+                func.flags &= ~FUNC_LIB
+                set_name(func.start_ea, "", SN_NOWARN)
+
+        return False
 
     @staticmethod
     def get_dirtree_entries(

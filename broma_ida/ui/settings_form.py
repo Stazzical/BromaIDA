@@ -1,6 +1,6 @@
 from ida_kernwin import Form
 
-from broma_ida.utils import HAS_IDACLANG
+from broma_ida.utils import HAS_IDACLANG, IDAUtils
 
 from broma_ida.ui.types.dynamic_form import DynamicForm
 from broma_ida.data.data_manager import DataManager
@@ -19,7 +19,7 @@ class SettingsForm(DynamicForm):
     rSetDefaultParserArguments: Form.ChkGroupItemControl
     rIgnoreMismatchedStructs: Form.ChkGroupItemControl
 
-    def __init__(self, version: str):
+    def __init__(self):
         super().__init__("""STARTITEM 0
 BUTTON YES NONE
 BUTTON NO NONE
@@ -49,7 +49,8 @@ BromaIDA
                 "rIgnoreMismatchedStructs",
             )),
             "cFooterLabel": Form.StringLabel(
-                f"BromaIDA v{version}. Made with love by SpaghettDev"
+                f"BromaIDA v{IDAUtils.SCRIPT_VERSION}. "
+                "Made with love by SpaghettDev"
             )
         })
 

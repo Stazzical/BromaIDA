@@ -1,4 +1,4 @@
-#ifdef BROMAIDA_PLATFORM_WINDOWS
+#if defined(BROMAIDA_PLATFORM_WINDOWS) || defined(CLANGD_INTELLISENSE)
 struct XINPUT_GAMEPAD
 {
     unsigned short wButtons;

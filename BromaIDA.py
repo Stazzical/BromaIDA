@@ -20,7 +20,7 @@ from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.main_form import MainForm
 
 
-VERSION = "7.2.0"
+VERSION = IDAUtils.SCRIPT_VERSION = "7.3.0"
 __AUTHOR__ = "SpaghettDev"
 
 PLUGIN_NAME = "BromaIDA"
@@ -94,7 +94,6 @@ def bida_main():
     )
 
     form_code = MainForm(
-        VERSION,
         IDAUtils.get_platform_printable(),
         on_import,
         on_export
@@ -133,6 +132,8 @@ class BromaIDAPlugin(ida_plugin_t):
         (does not work because this plugin has multiple py files)"""
         try:
             bida_main()
+        except SystemExit:
+            pass
         except BaseException as e:
             ida_msg(f"[!] BromaIDA: Fatal error: {e}\n")
 

@@ -2,6 +2,8 @@ from typing import Callable, Self
 
 from ida_kernwin import Form
 
+from broma_ida.utils import IDAUtils
+
 from broma_ida.ui.types.dynamic_form import DynamicForm
 from broma_ida.ui.settings_form import SettingsForm
 
@@ -15,12 +17,10 @@ class MainForm(DynamicForm):
 
     def __init__(
         self,
-        version: str,
         platform: str,
         on_import_button: Callable[[Self, int], None],
         on_export_button: Callable[[Self, int], None]
     ):
-        self.version = version
         self.on_import_button = on_import_button
         self.on_export_button = on_export_button
 
@@ -38,7 +38,7 @@ Select Mode:<##Import:{iImportButton}><##Export:{iExportButton}>
     <Settings:{iSettingsButton}>
 """, {
             "cMainLabel": Form.StringLabel(
-                f"BromaIDA v{version}. IDA Broma Support."
+                f"BromaIDA v{IDAUtils.SCRIPT_VERSION}. IDA Broma Support."
             ),
             "cPlatformLabel": Form.StringLabel(
                 f"Current Platform: {platform}"
@@ -51,10 +51,16 @@ Select Mode:<##Import:{iImportButton}><##Export:{iExportButton}>
         })
 
     def onImportButton(self, code: int = 0):
-        self.on_import_button(self, code)
+        try:
+            self.on_import_button(self, code)
+        except SystemExit:
+            pass
 
     def onExportButton(self, code: int = 0):
-        self.on_export_button(self, code)
+        try:
+            self.on_export_button(self, code)
+        except SystemExit:
+            pass
 
     def onSettingsButton(self, code: int = 0):
-        SettingsForm(self.version).show()
+        SettingsForm().show()

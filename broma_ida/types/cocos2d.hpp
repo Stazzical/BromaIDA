@@ -27,7 +27,7 @@
 	Modified by SpaghettDev
  ****************************************************************************/
 
-// based on geode-sdk/geode#38f3385c90b4df3e39e6c9c9aadd267a98b0a7fa
+// based on geode-sdk/geode#5bffdf0fe2c1d82a41f16638a3075bf297c69052
 
 // #include <cstdint>
 // #include <climits>
@@ -224,6 +224,7 @@ typedef unsigned int GLenum;
 typedef unsigned int GLbitfield;
 typedef unsigned int GLuint;
 typedef int GLint;
+typedef char GLchar;
 typedef int GLsizei;
 typedef unsigned char GLboolean;
 typedef signed char GLbyte;
@@ -490,7 +491,7 @@ namespace cocos2d
 		//! 16-bit textures: RGBA4444
 		kCCTexture2DPixelFormat_RGBA4444,
 		//! 16-bit textures: RGB5A1
-		kCCTexture2DPixelFormat_RGB5A1,    
+		kCCTexture2DPixelFormat_RGB5A1,
 		//! 4-bit PVRTC-compressed texture: PVRTC4
 		kCCTexture2DPixelFormat_PVRTC4,
 		//! 2-bit PVRTC-compressed texture: PVRTC2
@@ -559,190 +560,190 @@ namespace cocos2d
 
 	typedef enum
 	{
-	    // this one might not actually exist in gd itself
-	    KEY_Unknown = -0x01,
-	    KEY_None = 0x00,
-	    KEY_Backspace = 0x08,
-	    KEY_Tab = 0x09,
-	    KEY_Clear = 0x0C,
-	    KEY_Enter = 0x0D,
-	    KEY_Shift = 0x10,
-	    KEY_Control = 0x11,
-	    KEY_Alt = 0x12,
-	    KEY_Pause = 0x13,
-	    KEY_CapsLock = 0x14,
-	    KEY_Escape = 0x1B,
-	    KEY_Space = 0x20,
-	    KEY_PageUp = 0x21,
-	    KEY_PageDown = 0x22,
-	    KEY_End = 0x23,
-	    KEY_Home = 0x24,
-	    KEY_Left = 0x25,
-	    KEY_Up = 0x26,
-	    KEY_Right = 0x27,
-	    KEY_Down = 0x28,
-	    KEY_Select = 0x29,
-	    KEY_Print = 0x2A,
-	    KEY_Execute = 0x2B,
-	    KEY_PrintScreen = 0x2C,
-	    KEY_Insert = 0x2D,
-	    KEY_Delete = 0x2E,
-	    KEY_Help = 0x2F,
-	    KEY_Zero = 0x30,
-	    KEY_One = 0x31,
-	    KEY_Two = 0x32,
-	    KEY_Three = 0x33,
-	    KEY_Four = 0x34,
-	    KEY_Five = 0x35,
-	    KEY_Six = 0x36,
-	    KEY_Seven = 0x37,
-	    KEY_Eight = 0x38,
-	    KEY_Nine = 0x39,
-	    KEY_A = 0x41,
-	    KEY_B = 0x42,
-	    KEY_C = 0x43,
-	    KEY_D = 0x44,
-	    KEY_E = 0x45,
-	    KEY_F = 0x46,
-	    KEY_G = 0x47,
-	    KEY_H = 0x48,
-	    KEY_I = 0x49,
-	    KEY_J = 0x4A,
-	    KEY_K = 0x4B,
-	    KEY_L = 0x4C,
-	    KEY_M = 0x4D,
-	    KEY_N = 0x4E,
-	    KEY_O = 0x4F,
-	    KEY_P = 0x50,
-	    KEY_Q = 0x51,
-	    KEY_R = 0x52,
-	    KEY_S = 0x53,
-	    KEY_T = 0x54,
-	    KEY_U = 0x55,
-	    KEY_V = 0x56,
-	    KEY_W = 0x57,
-	    KEY_X = 0x58,
-	    KEY_Y = 0x59,
-	    KEY_Z = 0x5A,
-	    KEY_LeftWindowsKey = 0x5B,
-	    KEY_RightWindowsKey = 0x5C,
-	    KEY_ApplicationsKey = 0x5D,
-	    KEY_Sleep = 0x5F,
-	    KEY_NumPad0 = 0x60,
-	    KEY_NumPad1 = 0x61,
-	    KEY_NumPad2 = 0x62,
-	    KEY_NumPad3 = 0x63,
-	    KEY_NumPad4 = 0x64,
-	    KEY_NumPad5 = 0x65,
-	    KEY_NumPad6 = 0x66,
-	    KEY_NumPad7 = 0x67,
-	    KEY_NumPad8 = 0x68,
-	    KEY_NumPad9 = 0x69,
-	    KEY_Multiply = 0x6A,
-	    KEY_Add = 0x6B,
-	    KEY_Seperator = 0x6C,
-	    KEY_Subtract = 0x6D,
-	    KEY_Decimal = 0x6E,
-	    KEY_Divide = 0x6F,
-	    KEY_F1 = 0x70,
-	    KEY_F2 = 0x71,
-	    KEY_F3 = 0x72,
-	    KEY_F4 = 0x73,
-	    KEY_F5 = 0x74,
-	    KEY_F6 = 0x75,
-	    KEY_F7 = 0x76,
-	    KEY_F8 = 0x77,
-	    KEY_F9 = 0x78,
-	    KEY_F10 = 0x79,
-	    KEY_F11 = 0x7A,
-	    KEY_F12 = 0x7B,
-	    KEY_F13 = 0x7C,
-	    KEY_F14 = 0x7D,
-	    KEY_F15 = 0x7E,
-	    KEY_F16 = 0x7F,
-	    KEY_F17 = 0x80,
-	    KEY_F18 = 0x81,
-	    KEY_F19 = 0x82,
-	    KEY_F20 = 0x83,
-	    KEY_F21 = 0x84,
-	    KEY_F22 = 0x85,
-	    KEY_F23 = 0x86,
-	    KEY_F24 = 0x87,
-	    KEY_Numlock = 0x90,
-	    KEY_ScrollLock = 0x91,
-	    KEY_LeftShift = 0xA0,
-	    KEY_RightShift = 0xA1,
-	    KEY_LeftControl = 0xA2,
-	    KEY_RightContol = 0xA3,
-	    KEY_LeftMenu = 0xA4,
-	    KEY_RightMenu = 0xA5,
-	    KEY_BrowserBack = 0xA6,
-	    KEY_BrowserForward = 0xA7,
-	    KEY_BrowserRefresh = 0xA8,
-	    KEY_BrowserStop = 0xA9,
-	    KEY_BrowserSearch = 0xAA,
-	    KEY_BrowserFavorites = 0xAB,
-	    KEY_BrowserHome = 0xAC,
-	    KEY_VolumeMute = 0xAD,
-	    KEY_VolumeDown = 0xAE,
-	    KEY_VolumeUp = 0xAF,
-	    KEY_NextTrack = 0xB0,
-	    KEY_PreviousTrack = 0xB1,
-	    KEY_StopMedia = 0xB2,
-	    KEY_PlayPause = 0xB3,
-	    KEY_LaunchMail = 0xB4,
-	    KEY_SelectMedia = 0xB5,
-	    KEY_LaunchApp1 = 0xB6,
-	    KEY_LaunchApp2 = 0xB7,
-	    KEY_OEM1 = 0xBA,
-	    KEY_OEMPlus = 0xB8,
-	    KEY_OEMComma = 0xBC,
-	    KEY_OEMMinus = 0xBD,
-	    KEY_OEMPeriod = 0xBE,
-	    KEY_OEM2 = 0xBF,
-	    KEY_OEM3 = 0xC0,
-	    KEY_OEM4 = 0xDB,
-	    KEY_OEM5 = 0xDC,
-	    KEY_OEM6 = 0xDD,
-	    KEY_OEM7 = 0xDE,
-	    KEY_OEM8 = 0xDF,
-	    KEY_OEM102 = 0xE2,
-	    KEY_Process = 0xE5,
-	    KEY_Packet = 0xE7,
-	    KEY_Attn = 0xF6,
-	    KEY_CrSel = 0xF7,
-	    KEY_ExSel = 0xF8,
-	    KEY_EraseEOF = 0xF9,
-	    KEY_Play = 0xFA,
-	    KEY_Zoom = 0xFB,
-	    KEY_PA1 = 0xFD,
-	    KEY_OEMClear = 0xFE,
-	    KEY_ArrowUp = 0x11B,
-	    KEY_ArrowDown = 0x11C,
-	    KEY_ArrowLeft = 0x11D,
-	    KEY_ArrowRight = 0x11E,
-	    CONTROLLER_A = 0x3E9,
-	    CONTROLLER_B = 0x3EB,
-	    CONTROLLER_Y = 0x3ED,
-	    CONTROLLER_X = 0x3EF,
-	    CONTROLLER_Start = 0x3F1,
-	    CONTROLLER_Back = 0x3F3,
-	    CONTROLLER_RB = 0x3F5,
-	    CONTROLLER_LB = 0x3F7,
-	    CONTROLLER_RT = 0x3F9,
-	    CONTROLLER_LT = 0x3FB,
-	    CONTROLLER_Up = 0x3FD,
-	    CONTROLLER_Down = 0x3FF,
-	    CONTROLLER_Left = 0x401,
-	    CONTROLLER_Right = 0x403,
-	    CONTROLLER_LTHUMBSTICK_UP = 0x405,
-	    CONTROLLER_LTHUMBSTICK_DOWN = 0x407,
-	    CONTROLLER_LTHUMBSTICK_LEFT = 0x409,
-	    CONTROLLER_LTHUMBSTICK_RIGHT = 0x40B,
-	    CONTROLLER_RTHUMBSTICK_UP = 0x40D,
-	    CONTROLLER_RTHUMBSTICK_DOWN = 0x40F,
-	    CONTROLLER_RTHUMBSTICK_LEFT = 0x411,
-	    CONTROLLER_RTHUMBSTICK_RIGHT = 0x413,
+		// this one might not actually exist in gd itself
+		KEY_Unknown = -0x01,
+		KEY_None = 0x00,
+		KEY_Backspace = 0x08,
+		KEY_Tab = 0x09,
+		KEY_Clear = 0x0C,
+		KEY_Enter = 0x0D,
+		KEY_Shift = 0x10,
+		KEY_Control = 0x11,
+		KEY_Alt = 0x12,
+		KEY_Pause = 0x13,
+		KEY_CapsLock = 0x14,
+		KEY_Escape = 0x1B,
+		KEY_Space = 0x20,
+		KEY_PageUp = 0x21,
+		KEY_PageDown = 0x22,
+		KEY_End = 0x23,
+		KEY_Home = 0x24,
+		KEY_Left = 0x25,
+		KEY_Up = 0x26,
+		KEY_Right = 0x27,
+		KEY_Down = 0x28,
+		KEY_Select = 0x29,
+		KEY_Print = 0x2A,
+		KEY_Execute = 0x2B,
+		KEY_PrintScreen = 0x2C,
+		KEY_Insert = 0x2D,
+		KEY_Delete = 0x2E,
+		KEY_Help = 0x2F,
+		KEY_Zero = 0x30,
+		KEY_One = 0x31,
+		KEY_Two = 0x32,
+		KEY_Three = 0x33,
+		KEY_Four = 0x34,
+		KEY_Five = 0x35,
+		KEY_Six = 0x36,
+		KEY_Seven = 0x37,
+		KEY_Eight = 0x38,
+		KEY_Nine = 0x39,
+		KEY_A = 0x41,
+		KEY_B = 0x42,
+		KEY_C = 0x43,
+		KEY_D = 0x44,
+		KEY_E = 0x45,
+		KEY_F = 0x46,
+		KEY_G = 0x47,
+		KEY_H = 0x48,
+		KEY_I = 0x49,
+		KEY_J = 0x4A,
+		KEY_K = 0x4B,
+		KEY_L = 0x4C,
+		KEY_M = 0x4D,
+		KEY_N = 0x4E,
+		KEY_O = 0x4F,
+		KEY_P = 0x50,
+		KEY_Q = 0x51,
+		KEY_R = 0x52,
+		KEY_S = 0x53,
+		KEY_T = 0x54,
+		KEY_U = 0x55,
+		KEY_V = 0x56,
+		KEY_W = 0x57,
+		KEY_X = 0x58,
+		KEY_Y = 0x59,
+		KEY_Z = 0x5A,
+		KEY_LeftWindowsKey = 0x5B,
+		KEY_RightWindowsKey = 0x5C,
+		KEY_ApplicationsKey = 0x5D,
+		KEY_Sleep = 0x5F,
+		KEY_NumPad0 = 0x60,
+		KEY_NumPad1 = 0x61,
+		KEY_NumPad2 = 0x62,
+		KEY_NumPad3 = 0x63,
+		KEY_NumPad4 = 0x64,
+		KEY_NumPad5 = 0x65,
+		KEY_NumPad6 = 0x66,
+		KEY_NumPad7 = 0x67,
+		KEY_NumPad8 = 0x68,
+		KEY_NumPad9 = 0x69,
+		KEY_Multiply = 0x6A,
+		KEY_Add = 0x6B,
+		KEY_Seperator = 0x6C,
+		KEY_Subtract = 0x6D,
+		KEY_Decimal = 0x6E,
+		KEY_Divide = 0x6F,
+		KEY_F1 = 0x70,
+		KEY_F2 = 0x71,
+		KEY_F3 = 0x72,
+		KEY_F4 = 0x73,
+		KEY_F5 = 0x74,
+		KEY_F6 = 0x75,
+		KEY_F7 = 0x76,
+		KEY_F8 = 0x77,
+		KEY_F9 = 0x78,
+		KEY_F10 = 0x79,
+		KEY_F11 = 0x7A,
+		KEY_F12 = 0x7B,
+		KEY_F13 = 0x7C,
+		KEY_F14 = 0x7D,
+		KEY_F15 = 0x7E,
+		KEY_F16 = 0x7F,
+		KEY_F17 = 0x80,
+		KEY_F18 = 0x81,
+		KEY_F19 = 0x82,
+		KEY_F20 = 0x83,
+		KEY_F21 = 0x84,
+		KEY_F22 = 0x85,
+		KEY_F23 = 0x86,
+		KEY_F24 = 0x87,
+		KEY_Numlock = 0x90,
+		KEY_ScrollLock = 0x91,
+		KEY_LeftShift = 0xA0,
+		KEY_RightShift = 0xA1,
+		KEY_LeftControl = 0xA2,
+		KEY_RightContol = 0xA3,
+		KEY_LeftMenu = 0xA4,
+		KEY_RightMenu = 0xA5,
+		KEY_BrowserBack = 0xA6,
+		KEY_BrowserForward = 0xA7,
+		KEY_BrowserRefresh = 0xA8,
+		KEY_BrowserStop = 0xA9,
+		KEY_BrowserSearch = 0xAA,
+		KEY_BrowserFavorites = 0xAB,
+		KEY_BrowserHome = 0xAC,
+		KEY_VolumeMute = 0xAD,
+		KEY_VolumeDown = 0xAE,
+		KEY_VolumeUp = 0xAF,
+		KEY_NextTrack = 0xB0,
+		KEY_PreviousTrack = 0xB1,
+		KEY_StopMedia = 0xB2,
+		KEY_PlayPause = 0xB3,
+		KEY_LaunchMail = 0xB4,
+		KEY_SelectMedia = 0xB5,
+		KEY_LaunchApp1 = 0xB6,
+		KEY_LaunchApp2 = 0xB7,
+		KEY_OEM1 = 0xBA,
+		KEY_OEMPlus = 0xB8,
+		KEY_OEMComma = 0xBC,
+		KEY_OEMMinus = 0xBD,
+		KEY_OEMPeriod = 0xBE,
+		KEY_OEM2 = 0xBF,
+		KEY_OEM3 = 0xC0,
+		KEY_OEM4 = 0xDB,
+		KEY_OEM5 = 0xDC,
+		KEY_OEM6 = 0xDD,
+		KEY_OEM7 = 0xDE,
+		KEY_OEM8 = 0xDF,
+		KEY_OEM102 = 0xE2,
+		KEY_Process = 0xE5,
+		KEY_Packet = 0xE7,
+		KEY_Attn = 0xF6,
+		KEY_CrSel = 0xF7,
+		KEY_ExSel = 0xF8,
+		KEY_EraseEOF = 0xF9,
+		KEY_Play = 0xFA,
+		KEY_Zoom = 0xFB,
+		KEY_PA1 = 0xFD,
+		KEY_OEMClear = 0xFE,
+		KEY_ArrowUp = 0x11B,
+		KEY_ArrowDown = 0x11C,
+		KEY_ArrowLeft = 0x11D,
+		KEY_ArrowRight = 0x11E,
+		CONTROLLER_A = 0x3E9,
+		CONTROLLER_B = 0x3EB,
+		CONTROLLER_Y = 0x3ED,
+		CONTROLLER_X = 0x3EF,
+		CONTROLLER_Start = 0x3F1,
+		CONTROLLER_Back = 0x3F3,
+		CONTROLLER_RB = 0x3F5,
+		CONTROLLER_LB = 0x3F7,
+		CONTROLLER_RT = 0x3F9,
+		CONTROLLER_LT = 0x3FB,
+		CONTROLLER_Up = 0x3FD,
+		CONTROLLER_Down = 0x3FF,
+		CONTROLLER_Left = 0x401,
+		CONTROLLER_Right = 0x403,
+		CONTROLLER_LTHUMBSTICK_UP = 0x405,
+		CONTROLLER_LTHUMBSTICK_DOWN = 0x407,
+		CONTROLLER_LTHUMBSTICK_LEFT = 0x409,
+		CONTROLLER_LTHUMBSTICK_RIGHT = 0x40B,
+		CONTROLLER_RTHUMBSTICK_UP = 0x40D,
+		CONTROLLER_RTHUMBSTICK_DOWN = 0x40F,
+		CONTROLLER_RTHUMBSTICK_LEFT = 0x411,
+		CONTROLLER_RTHUMBSTICK_RIGHT = 0x413,
 	} enumKeyCodes;
 
 	typedef enum {
@@ -774,9 +775,7 @@ namespace cocos2d
 		/** Living particles are attached to the world and are unaffected by emitter repositioning. */
 		kCCPositionTypeFree,
 
-		/** Living particles are attached to the world but will follow the emitter repositioning.
-		Use case: Attach an emitter to an sprite, and you want that the emitter follows the sprite.
-		*/
+		
 		kCCPositionTypeRelative,
 
 		/** Living particles are attached to the emitter and are translated along with it. */
@@ -983,10 +982,10 @@ namespace cocos2d
 	} ccFontDefinition;
 
 	typedef struct _ccTexParams {
-		GLuint    minFilter;
-		GLuint    magFilter;
-		GLuint    wrapS;
-		GLuint    wrapT;
+		GLuint minFilter;
+		GLuint magFilter;
+		GLuint wrapS;
+		GLuint wrapT;
 	} ccTexParams;
 
 	typedef struct _ccTex2F {
@@ -1102,9 +1101,9 @@ namespace cocos2d
 
 	typedef struct
 	{
-		double h;       // angle in degrees
-		double s;       // percent
-		double v;       // percent
+		double h; // angle in degrees
+		double s; // percent
+		double v; // percent
 	} HSV;
 
 	struct  cc_timeval
@@ -1119,7 +1118,7 @@ namespace cocos2d
 
 	typedef struct _BMFontPadding {
 		/// padding left
-		int    left;
+		int left;
 		/// padding top
 		int top;
 		/// padding right
@@ -1159,7 +1158,7 @@ namespace cocos2d
 	{
 		CCRect  begin;              // the soft keyboard rectangle when animation begins
 		CCRect  end;                // the soft keyboard rectangle when animation ends
-		float     duration;           // the soft keyboard animation duration
+		float  duration;           // the soft keyboard animation duration
 	} CCIMEKeyboardNotificationInfo;
 
 	typedef struct GLFWvidmode
@@ -1208,7 +1207,7 @@ namespace cocos2d
 	typedef struct _ccCArray {
 		unsigned int num, max;
 		// 2.2 additions
-		unsigned int unknown;
+		unsigned int childIndex;
 		void** arr;
 	} ccCArray;
 
@@ -1224,6 +1223,9 @@ namespace cocos2d
 	typedef void (CCObject::*SEL_CCControlHandler)(CCObject*, CCControlEvent);
 
 	typedef long long (*CUSTOM_WND_PROC)(unsigned int message, unsigned long long wParam, long long lParam, int* pProcessed);
+
+	typedef void (*GLInfoFunction)(GLuint program, GLenum pname, GLint* params);
+	typedef void (*GLLogFunction) (GLuint program, GLsizei bufsize, GLsizei* length, GLchar* infolog);
 
 
 	class CCCopying
@@ -1264,9 +1266,9 @@ namespace cocos2d
 		int m_nLuaID;
 	protected:
 		int m_nTag;
-		unsigned int        m_uReference;
+		unsigned int m_uReference;
 		// count of autorelease
-		unsigned int        m_uAutoReleaseCount;
+		unsigned int m_uAutoReleaseCount;
 
 		CCObjectType m_eObjType;
 
@@ -1486,7 +1488,7 @@ namespace cocos2d
 	class CCPoolManager
 	{
 	private:
-		CCArray* m_pReleasePoolStack;    
+		CCArray* m_pReleasePoolStack;
 		CCAutoreleasePool* m_pCurReleasePool;
 
 	private:
@@ -1592,7 +1594,7 @@ namespace cocos2d
 		#define   MAX_KEY_LEN   256
 		// char array is needed for HASH_ADD_STR in UT_HASH.
 		// So it's a pain that all elements will allocate 256 bytes for this array.
-		char      m_szKey[MAX_KEY_LEN];     // hash key of string type
+		char m_szKey[MAX_KEY_LEN];     // hash key of string type
 		std::intptr_t  m_iKey;       // hash key of integer type
 		CCObject* m_pObject;    // hash value
 	public:
@@ -1685,7 +1687,7 @@ namespace cocos2d
 		float m_fUpZ;
 
 		bool m_bDirty;
-		kmMat4    m_lookupMatrix;
+		kmMat4 m_lookupMatrix;
 
 	public:
 		CCCamera(void);
@@ -1711,13 +1713,63 @@ namespace cocos2d
 		static float getZEye();
 	};
 
-	class CCGLProgram : CCObject
+	class CCGLProgram : public CCObject
 	{
 	public:
 		CCGLProgram();
-		virtual ~CCGLProgram();
 
-	protected:
+		virtual ~CCGLProgram();
+		bool initWithVertexShaderByteArray(const GLchar* vShaderByteArray, const GLchar* fShaderByteArray);
+#if 0
+	#if (CC_TARGET_PLATFORM == CC_PLATFORM_WINRT) || (CC_TARGET_PLATFORM == CC_PLATFORM_WP8)
+		bool initWithPrecompiledProgramByteArray(const GLchar* vShaderByteArray, const GLchar* fShaderByteArray);
+	#endif
+#endif
+		bool initWithVertexShaderFilename(const char* vShaderFilename, const char* fShaderFilename);
+		void addAttribute(const char* attributeName, GLuint index);
+
+		bool link();
+
+		void use();
+
+		void updateUniforms();
+
+		GLint getUniformLocationForName(const char* name);
+
+		void setUniformLocationWith1i(GLint location, GLint i1);
+		void setUniformLocationWith2i(GLint location, GLint i1, GLint i2);
+		void setUniformLocationWith3i(GLint location, GLint i1, GLint i2, GLint i3);
+		void setUniformLocationWith4i(GLint location, GLint i1, GLint i2, GLint i3, GLint i4);
+		void setUniformLocationWith2iv(GLint location, GLint* ints, unsigned int numberOfArrays);
+		void setUniformLocationWith3iv(GLint location, GLint* ints, unsigned int numberOfArrays);
+		void setUniformLocationWith4iv(GLint location, GLint* ints, unsigned int numberOfArrays);
+		void setUniformLocationWith1f(GLint location, GLfloat f1);
+		void setUniformLocationWith2f(GLint location, GLfloat f1, GLfloat f2);
+		void setUniformLocationWith3f(GLint location, GLfloat f1, GLfloat f2, GLfloat f3);
+		void setUniformLocationWith4f(GLint location, GLfloat f1, GLfloat f2, GLfloat f3, GLfloat f4);
+		void setUniformLocationWith2fv(GLint location, GLfloat* floats, unsigned int numberOfArrays);
+		void setUniformLocationWith3fv(GLint location, GLfloat* floats, unsigned int numberOfArrays);
+		void setUniformLocationWith4fv(GLint location, GLfloat* floats, unsigned int numberOfArrays);
+		void setUniformLocationWithMatrix4fv(GLint location, GLfloat* matrixArray, unsigned int numberOfMatrices);
+
+		void setUniformsForBuiltins();
+		const char* vertexShaderLog();
+		const char* fragmentShaderLog();
+		const char* programLog();
+
+		void reset();
+
+		inline const GLuint getProgram() { return m_uProgram; }
+
+		void setUniformLocationWithMatrix3fv(int, float*, unsigned int);
+
+	private:
+		bool updateUniformLocation(GLint location, GLvoid* data, unsigned int bytes);
+		const char* description();
+		bool compileShader(GLuint * shader, GLenum type, const GLchar* source);
+		const char* logForOpenGLObject(GLuint object, GLInfoFunction infoFunc, GLLogFunction logFunc);
+
+	public:
 		GLuint            m_uProgram;
 		GLuint            m_uVertShader;
 		GLuint            m_uFragShader;
@@ -1726,40 +1778,70 @@ namespace cocos2d
 		bool              m_bUsesTime;
 		bool              m_hasShaderCompiler;
 
-		#if 0 // windows phone my beloved
-		#if (CC_TARGET_PLATFORM == CC_PLATFORM_WINRT) || (CC_TARGET_PLATFORM == CC_PLATFORM_WP8)
-			std::string       m_shaderId;
-		#endif
-		#endif
+#if 0  /* windows phone my beloved */
+	#if (CC_TARGET_PLATFORM == CC_PLATFORM_WINRT) || (CC_TARGET_PLATFORM == CC_PLATFORM_WP8)
+		gd::string       m_shaderId;
+	#endif
+#endif
 	};
 
 	class CCImage : public CCObject
 	{
 	public:
+		CCImage();
+
+		typedef enum
+		{
+			kFmtJpg = 0,
+			kFmtPng,
+			kFmtTiff,
+			kFmtWebp,
+			kFmtRawData,
+			kFmtUnKnown
+		} EImageFormat;
+
+		typedef enum
+		{
+			kAlignCenter        = 0x33, ///< Horizontal center and vertical center.
+			kAlignTop           = 0x13, ///< Horizontal center and vertical top.
+			kAlignTopRight      = 0x12, ///< Horizontal right and vertical top.
+			kAlignRight         = 0x32, ///< Horizontal right and vertical center.
+			kAlignBottomRight   = 0x22, ///< Horizontal right and vertical bottom.
+			kAlignBottom        = 0x23, ///< Horizontal center and vertical bottom.
+			kAlignBottomLeft    = 0x21, ///< Horizontal left and vertical bottom.
+			kAlignLeft          = 0x31, ///< Horizontal left and vertical center.
+			kAlignTopLeft       = 0x11, ///< Horizontal left and vertical top.
+		} ETextAlign;
+
+	public:
 		CC_SYNTHESIZE_READONLY_NV(unsigned short,   m_nWidth,       Width);
 		CC_SYNTHESIZE_READONLY_NV(unsigned short,   m_nHeight,      Height);
-		CC_SYNTHESIZE_READONLY_NV(int,     m_nBitsPerComponent,   BitsPerComponent);
+		CC_SYNTHESIZE_READONLY_NV(int, m_nBitsPerComponent,   BitsPerComponent);
 
 	protected:
 		unsigned char *m_pData;
 		bool m_bHasAlpha;
 		bool m_bPreMulti;
 
-	#if 0
+#if 0
 	#if (CC_TARGET_PLATFORM == CC_PLATFORM_WINRT) || (CC_TARGET_PLATFORM == CC_PLATFORM_WP8)
 		CCFreeTypeFont* m_ft;
 	#endif
-	#endif
+#endif
 	};
 
 	class CCTexture2D : public CCObject
 	{
 	public:
 		CCTexture2D();
+
 		virtual ~CCTexture2D();
+
 		const char* description(void);
 
 		void releaseData(void *data);
+
+		
 		void* keepData(void *data, unsigned int length);
 
 		bool initWithData(const void* data, CCTexture2DPixelFormat pixelFormat, unsigned int pixelsWide, unsigned int pixelsHigh, const CCSize& contentSize);
@@ -1767,37 +1849,31 @@ namespace cocos2d
 		void drawAtPoint(const CCPoint& point);
 		void drawInRect(const CCRect& rect);
 
+		bool initWithImage(CCImage * uiImage);
 		bool initWithString(const char *text,  const char *fontName, float fontSize, const CCSize& dimensions, CCTextAlignment hAlignment, CCVerticalTextAlignment vAlignment);
 		bool initWithString(const char *text, const char *fontName, float fontSize);
 		bool initWithString(const char *text, ccFontDefinition *textDefinition);
-		
 		bool initWithPVRFile(const char* file);
-		
 		bool initWithETCFile(const char* file);
 
 		void setTexParameters(ccTexParams* texParams);
-
 		void setAntiAliasTexParameters();
-
 		void setAliasTexParameters();
-
 
 		void generateMipmap();
 
 		const char* stringForFormat();
-
-		unsigned int bitsPerPixelForFormat();  
-
+		
+		unsigned int bitsPerPixelForFormat();
+		
 		unsigned int bitsPerPixelForFormat(CCTexture2DPixelFormat format);
-
 		static void setDefaultAlphaPixelFormat(CCTexture2DPixelFormat format);
-
+		
 		static CCTexture2DPixelFormat defaultAlphaPixelFormat();
-
 		static void PVRImagesHavePremultipliedAlpha(bool haveAlphaPremultiplied);
 
 		const CCSize& getContentSizeInPixels();
-		
+
 		bool hasPremultipliedAlpha();
 		bool hasMipmaps();
 
@@ -1806,32 +1882,22 @@ namespace cocos2d
 	private:
 		bool initPremultipliedATextureWithImage(CCImage * image, unsigned int pixelsWide, unsigned int pixelsHigh);
 
-		// By default PVR images are treated as if they don't have the alpha channel premultiplied
+	public:
 		bool m_bPVRHaveAlphaPremultiplied;
 
-		/** pixel format of the texture */
 		CC_PROPERTY_READONLY(CCTexture2DPixelFormat, m_ePixelFormat, PixelFormat)
-		/** width in pixels */
 		CC_PROPERTY_READONLY(unsigned int, m_uPixelsWide, PixelsWide)
-		/** height in pixels */
 		CC_PROPERTY_READONLY(unsigned int, m_uPixelsHigh, PixelsHigh)
 
-		/** texture name */
 		CC_PROPERTY_READONLY(GLuint, m_uName, Name)
 
-		/** texture max S */
 		CC_PROPERTY(GLfloat, m_fMaxS, MaxS)
-		/** texture max T */
 		CC_PROPERTY(GLfloat, m_fMaxT, MaxT)
-		/** content size */
 		CC_PROPERTY_READONLY(CCSize, m_tContentSize, ContentSize)
 
-		/** whether or not the texture has their Alpha premultiplied */
 		bool m_bHasPremultipliedAlpha;
-
 		bool m_bHasMipmaps;
 
-		/** shader program used by drawAtPoint and drawInRect */
 		CC_PROPERTY(CCGLProgram*, m_pShaderProgram, ShaderProgram);
 	};
 
@@ -1893,12 +1959,48 @@ namespace cocos2d
 
 	class CCScheduler : public CCObject
 	{
-	protected:
+	public:
+		CCScheduler();
+		~CCScheduler(void);
+
+		inline float getTimeScale(void) { return m_fTimeScale; }
+		inline void setTimeScale(float fTimeScale) { m_fTimeScale = fTimeScale; }
+
+		void update(float dt);
+
+		void scheduleSelector(SEL_SCHEDULE pfnSelector, CCObject* pTarget, float fInterval, unsigned int repeat, float delay, bool bPaused);
+		void scheduleSelector(SEL_SCHEDULE pfnSelector, CCObject* pTarget, float fInterval, bool bPaused);
+		void scheduleUpdateForTarget(CCObject* pTarget, int nPriority, bool bPaused);
+
+		void unscheduleSelector(SEL_SCHEDULE pfnSelector, CCObject* pTarget);
+		void unscheduleUpdateForTarget(const CCObject* pTarget);
+		void unscheduleAllForTarget(CCObject* pTarget);
+		void unscheduleAll(void);
+		void unscheduleAllWithMinPriority(int nMinPriority);
+
+		unsigned int scheduleScriptFunc(unsigned int nHandler, float fInterval, bool bPaused);
+
+		void unscheduleScriptEntry(unsigned int uScheduleScriptEntryID);
+
+		void pauseTarget(CCObject* pTarget);
+		void resumeTarget(CCObject* pTarget);
+		bool isTargetPaused(CCObject* pTarget);
+
+		CCSet* pauseAllTargets();
+		CCSet* pauseAllTargetsWithMinPriority(int nMinPriority);
+
+		void resumeTargets(CCSet* targetsToResume);
+
+	private:
+		void removeHashElement(struct _hashSelectorEntry* pElement);
+		void removeUpdateFromHash(struct _listEntry* entry);
+
+		void priorityIn(struct _listEntry** ppList, CCObject* pTarget, int nPriority, bool bPaused);
+		void appendIn(struct _listEntry** ppList, CCObject* pTarget, bool bPaused);
+
+	public:
 		float m_fTimeScale;
 
-		//
-		// "updates with priority" stuff
-		//
 		struct _listEntry *m_pUpdatesNegList;        // list of priority < 0
 		struct _listEntry *m_pUpdates0List;            // list priority == 0
 		struct _listEntry *m_pUpdatesPosList;        // list priority > 0
@@ -2020,6 +2122,8 @@ namespace cocos2d
 		CCPoint m_startPoint;
 		CCPoint m_point;
 		CCPoint m_prevPoint;
+		// @note RobTop Addition
+    	CC_SYNTHESIZE_NV(double, m_timestamp, Timestamp);
 	};
 
 	class CCEvent : public CCObject
@@ -2236,9 +2340,9 @@ namespace cocos2d
 		// 2.2 additions
 		virtual void updateTweenActionInt(float, int);
 
-		cocos2d::CCAffineTransform getTransformTemp();
+		inline cocos2d::CCAffineTransform getTransformTemp() { return m_sTransform; }
 
-		bool getUseChildIndex();
+		inline bool getUseChildIndex() { return m_bUseChildIndex; }
 		void setUseChildIndex(bool);
 		void qsortAllChildrenWithIndex();
 
@@ -2315,11 +2419,17 @@ namespace cocos2d
 		bool m_bRunning;                    ///< is running
 
 		bool m_bTransformDirty;             ///< transform dirty flag
-		bool m_bInverseDirty;               ///< transform dirty flag
-		bool m_bAdditionalTransformDirty;   ///< The flag to check whether the additional transform is dirty
 
 		// 2.2 additions
-		PAD(10); // i dont know if this is related to transform at all, but its here
+		// @note RobTop Addition
+		bool m_bPositionDirty;
+		// @note RobTop Addition
+		float m_fTransformX;
+		// @note RobTop Addition
+		float m_fTransformY;
+
+		bool m_bInverseDirty;               ///< transform dirty flag
+		bool m_bAdditionalTransformDirty;   ///< The flag to check whether the additional transform is dirty
 
 		bool m_bVisible;                    ///< is this node visible
 
@@ -2335,7 +2445,7 @@ namespace cocos2d
 		CCComponentContainer *m_pComponentContainer;        ///< Dictionary of components
 
 		// 2.2 additions
-		bool m_bUnkBool1;
+		bool m_bUseChildIndex;
 		bool m_bUnkBool2;
 	};
 
@@ -2523,7 +2633,7 @@ namespace cocos2d
 		inline CCScriptHandlerEntry* getScriptKeypadHandlerEntry() { return m_pScriptKeypadHandlerEntry; };
 		inline CCScriptHandlerEntry* getScriptAccelerateHandlerEntry() { return m_pScriptAccelerateHandlerEntry; };
 
-	protected:   
+	protected:
 		bool m_bTouchEnabled;
 		bool m_bAccelerometerEnabled;
 		bool m_bKeypadEnabled;
@@ -2531,7 +2641,7 @@ namespace cocos2d
 		bool m_bKeyboardEnabled;
 		// @note RobTop Addition
 		bool m_bMouseEnabled;
-		
+
 	private:
 		// Script touch events handler
 		CCTouchScriptHandlerEntry* m_pScriptTouchHandlerEntry;
@@ -2704,6 +2814,9 @@ namespace cocos2d
 
 		virtual bool init();
 
+		// @note RobTop Addition
+		virtual void visit();	
+
 		virtual void updateColor();
 
 		virtual bool initWithColor(const ccColor4B& start, const ccColor4B& end);
@@ -2833,6 +2946,9 @@ namespace cocos2d
 		
 		virtual bool isEnabled() { return m_bEnabled; }
 		virtual void setEnabled(bool value) { m_bEnabled = value; };
+
+		// @note RobTop Addition
+		void giveMenuTouchPriority();
 
 	protected:
 		CCMenuItem* itemForTouch(CCTouch * touch);
@@ -3016,6 +3132,9 @@ namespace cocos2d
 		/** Quads that are going to be rendered */
 		CC_PROPERTY(ccV3F_C4B_T2F_Quad *, m_pQuads, Quads)
 
+		// @note RobTop Addition
+		unsigned int m_uMaxQuads;
+
 	public:
 		CCTextureAtlas();
 		virtual ~CCTextureAtlas();
@@ -3100,32 +3219,32 @@ namespace cocos2d
 			return CCSpriteBatchNode::create(fileImage, kDefaultSpriteBatchCapacity);
 		}
 
-		bool initWithTexture(CCTexture2D *tex, unsigned int capacity);
+		bool initWithTexture(CCTexture2D* tex, unsigned int capacity);
 		bool initWithFile(const char* fileImage, unsigned int capacity);
 		bool init();
 
 		void removeChildAtIndex(unsigned int index, bool doCleanup);
 
-		void insertChild(CCSprite *child, unsigned int index);
+		void insertChild(CCSprite* child, unsigned int index);
 		void appendChild(CCSprite* sprite);
-		void removeSpriteFromAtlas(CCSprite *sprite);
+		void removeSpriteFromAtlas(CCSprite* sprite);
 
-		unsigned int rebuildIndexInOrder(CCSprite *parent, unsigned int index);
-		unsigned int highestAtlasIndexInChild(CCSprite *sprite);
-		unsigned int lowestAtlasIndexInChild(CCSprite *sprite);
-		unsigned int atlasIndexForChild(CCSprite *sprite, int z);
+		unsigned int rebuildIndexInOrder(CCSprite* parent, unsigned int index);
+		unsigned int highestAtlasIndexInChild(CCSprite* sprite);
+		unsigned int lowestAtlasIndexInChild(CCSprite* sprite);
+		unsigned int atlasIndexForChild(CCSprite* sprite, int z);
 		void reorderBatch(bool reorder);
 		// CCTextureProtocol
 		virtual CCTexture2D* getTexture(void);
-		virtual void setTexture(CCTexture2D *texture);
+		virtual void setTexture(CCTexture2D* texture);
 		virtual void setBlendFunc(ccBlendFunc blendFunc);
 		virtual ccBlendFunc getBlendFunc(void);
 
 		virtual void visit(void);
-		virtual void addChild(CCNode * child);
-		virtual void addChild(CCNode * child, int zOrder);
-		virtual void addChild(CCNode * child, int zOrder, int tag);
-		virtual void reorderChild(CCNode * child, int zOrder);
+		virtual void addChild(CCNode* child);
+		virtual void addChild(CCNode* child, int zOrder);
+		virtual void addChild(CCNode* child, int zOrder, int tag);
+		virtual void reorderChild(CCNode* child, int zOrder);
 			
 		virtual void removeChild(CCNode* child, bool cleanup);
 		virtual void removeAllChildrenWithCleanup(bool cleanup);
@@ -3279,7 +3398,9 @@ namespace cocos2d
 		bool isFlipY(void);
 		void setFlipY(bool bFlipY);
 
-		cocos2d::CCPoint const& getUnflippedOffsetPosition();
+		inline cocos2d::CCPoint const& getUnflippedOffsetPosition() {
+			return m_obUnflippedOffsetPositionFromCenter;
+		}
 
 	protected:
 		void updateColor(void);
@@ -3337,6 +3458,116 @@ namespace cocos2d
 		// @note RobTop Addition
 		float m_fTextureTop;
 	};
+
+
+	// CCTextureCache
+	class CCTextureCache : public CCObject
+	{
+	public:
+		CCDictionary* m_pTextures;
+		//pthread_mutex_t                *m_pDictLock;
+
+		// @note RobTop Addition
+		bool m_asyncLoadingPrepared;
+
+	private:
+		/// todo: void addImageWithAsyncObject(CCAsyncObject* async);
+		void addImageAsyncCallBack(float dt);
+
+	public:
+		CCTextureCache();
+		virtual ~CCTextureCache();
+
+		const char* description(void);
+
+		CCDictionary* snapshotTextures();
+
+		static CCTextureCache* sharedTextureCache();
+
+		static void purgeSharedTextureCache();
+
+		CCTexture2D* addImage(const char* fileimage, bool);
+
+		void addImageAsync(char const*, cocos2d::CCObject*, cocos2d::SEL_MenuHandler, int, cocos2d::CCTexture2DPixelFormat);
+
+		CCTexture2D* addUIImage(CCImage* image, const char* key);
+
+		CCTexture2D* textureForKey(const char* key);
+
+		bool reloadTexture(const char* fileName);
+
+		void removeAllTextures();
+		void removeUnusedTextures();
+		void removeTexture(CCTexture2D* texture);
+		void removeTextureForKey(const char* textureKeyName);
+
+		void dumpCachedTextureInfo();
+
+		CCTexture2D* addPVRImage(const char* filename);
+		CCTexture2D* addETCImage(const char* filename);
+
+		static void reloadAllTextures();
+
+		void prepareAsyncLoading();
+	};
+
+#ifdef BROMAIDA_IS_PLATFORM_ANDROID
+	class VolatileTexture
+	{
+	typedef enum {
+		kInvalid = 0,
+		kImageFile,
+		kImageData,
+		kString,
+		kImage,
+	} ccCachedImageType;
+
+	public:
+		VolatileTexture(CCTexture2D* t);
+		~VolatileTexture();
+
+		static void addImageTexture(CCTexture2D* tt, const char* imageFileName, CCImage::EImageFormat format);
+		static void addStringTexture(CCTexture2D* tt, const char* text, const CCSize& dimensions, CCTextAlignment alignment,
+									CCVerticalTextAlignment vAlignment, const char* fontName, float fontSize);
+		static void addDataTexture(CCTexture2D* tt, void* data, CCTexture2DPixelFormat pixelFormat, const CCSize& contentSize);
+		static void addCCImage(CCTexture2D* tt, CCImage* image);
+
+		static void setTexParameters(CCTexture2D *t, ccTexParams *texParams);
+		static void removeTexture(CCTexture2D *t);
+		static void reloadAllTextures();
+
+	public:
+		static std::list<VolatileTexture*> textures;
+		static bool isReloading;
+
+	private:
+		// find VolatileTexture by CCTexture2D*
+		// if not found, create a new one
+		static VolatileTexture* findVolotileTexture(CCTexture2D *tt);
+
+	public:
+		CCTexture2D *texture;
+
+		CCImage *uiImage;
+
+		ccCachedImageType m_eCashedImageType;
+
+		void *m_pTextureData;
+		CCSize m_TextureSize;
+		CCTexture2DPixelFormat m_PixelFormat;
+
+		std::string m_strFileName;
+		CCImage::EImageFormat m_FmtImage;
+
+		ccTexParams     m_texParams;
+		CCSize          m_size;
+		CCTextAlignment m_alignment;
+		CCVerticalTextAlignment m_vAlignment;
+		std::string     m_strFontName;
+		std::string     m_strText;
+		float           m_fFontSize;
+	};
+#endif // BROMAIDA_IS_PLATFORM_ANDROID
 
 
 	// CCProgressTimer
@@ -3479,6 +3710,37 @@ namespace cocos2d
 		float m_elapsed;
 		bool   m_bFirstTick;
 	};
+	
+
+	// CCActionTween
+	class CCActionTweenDelegate
+	{
+	public:
+		virtual ~CCActionTweenDelegate() {}
+		virtual void updateTweenAction(float value, const char* key) = 0;
+	};
+
+	class CCActionTween : public CCActionInterval
+	{
+	public:
+		static CCActionTween* create(float aDuration, const char* key, float from, float to);
+		static cocos2d::CCActionTween* create(float, int, float, float);
+
+		bool initWithDuration(float aDuration, const char* key, float from, float to);
+
+		void startWithTarget(CCNode *pTarget);
+		void update(float dt);
+		CCActionInterval* reverse();
+
+		// 2.2 addition
+		void updateTargetValue(float);
+
+		std::string        m_strKey;
+		// @note RobTop Addition
+		int               m_nIntTag;
+		float            m_fFrom, m_fTo;
+		float            m_fDelta;
+	};
 
 
 	// CCAnimate
@@ -3491,10 +3753,7 @@ namespace cocos2d
 		/** initializes the action with an Animation and will restore the original frame when the animation is over */
 		bool initWithAnimation(CCAnimation *pAnimation);
 
-		/**
-		*  @js NA
-		*  @lua NA
-		*/
+		
 		virtual CCObject* copyWithZone(CCZone* pZone);
 		virtual void startWithTarget(CCNode *pTarget);
 		virtual void stop(void);
@@ -3684,13 +3943,20 @@ namespace cocos2d
 		bool drawPolygon(CCPoint *verts, unsigned int count, const ccColor4F &fillColor, float borderWidth, const ccColor4F &borderColor);
 
 		bool drawCircle(cocos2d::CCPoint const&, float, cocos2d::_ccColor4F const&, float, cocos2d::_ccColor4F const&, unsigned int);
-		void drawCubicBezier(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, unsigned int, cocos2d::_ccColor4F const&);
-		void drawPreciseCubicBezier(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, unsigned int, cocos2d::_ccColor4F const&);
+		void drawCubicBezier(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, unsigned int, cocos2d::_ccColor4F const&, float);
+		void drawPreciseCubicBezier(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, unsigned int, cocos2d::_ccColor4F const&, float);
 		bool drawLines(cocos2d::CCPoint*, unsigned int, float, cocos2d::_ccColor4F const&);
 		bool drawRect(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::_ccColor4F const&, float, cocos2d::_ccColor4F const&);
 		bool drawRect(cocos2d::CCRect const&, cocos2d::_ccColor4F const&, float, cocos2d::_ccColor4F const&);
 		void disableDrawArea();
 		void enableDrawArea(cocos2d::CCRect& rect);
+
+		bool is_circle_on_screen(cocos2d::CCRect const&, cocos2d::CCPoint const&, float);
+		bool is_segment_on_screen(cocos2d::CCRect const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&);
+
+		void drawArchLikeHalfCircle(cocos2d::CCPoint const&, cocos2d::CCPoint const&, float, unsigned int, cocos2d::_ccColor4F const&, float);
+		void drawCubicBezierDashed(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, unsigned int, cocos2d::ccColor4F const&, float, unsigned int, unsigned int);
+		bool drawSegmentEx(cocos2d::CCPoint const&, cocos2d::CCPoint const&, float, cocos2d::_ccColor4F const&, bool, bool);
 
 		void clear();
 		ccBlendFunc getBlendFunc() const;
@@ -3790,7 +4056,7 @@ namespace cocos2d
 			/** The ending radius of the particles. Only available in 'Radius' mode. */
 			float endRadius;
 			/** The ending radius variance of the particles. Only available in 'Radius' mode. */
-			float endRadiusVar;            
+			float endRadiusVar;
 			/** Number of degrees to rotate a particle around the source pos per second. Only available in 'Radius' mode. */
 			float rotatePerSecond;
 			/** Variance in degrees for rotatePerSecond. Only available in 'Radius' mode. */
@@ -4069,6 +4335,9 @@ namespace cocos2d
 		void toggleUniformColorMode(bool useUniformColorMode) { m_bUseUniformColorMode = useUniformColorMode; }
 		// @note RobTop Addition
 		void updateVisible();
+
+		// @note RobTop Addition
+		int getParticleDrawCost();
 	};
 
 	class CCParticleSystemQuad : public CCParticleSystem
@@ -4115,9 +4384,9 @@ namespace cocos2d
 
 		void listenBackToForeground(CCObject *obj);
 
-		static CCParticleSystemQuad * create();
-		static CCParticleSystemQuad * create(const char*, bool);
-		static CCParticleSystemQuad * createWithTotalParticles(unsigned int numberOfParticles, bool);
+		static CCParticleSystemQuad* create();
+		static CCParticleSystemQuad* create(const char*, bool);
+		static CCParticleSystemQuad* createWithTotalParticles(unsigned int numberOfParticles, bool);
 
 		GLubyte getOpacity() { return m_uOpacity; }
 		void setOpacity(GLubyte opacity) { m_uOpacity = opacity; }
@@ -4629,11 +4898,11 @@ namespace cocos2d
 		// 2.2 changes
 
 		// @note RobTop Addition
-		CC_SYNTHESIZE_NV(int, m_forcePrio, ForcePrio);
-		// @note RobTop Addition
-		void* m_unknown;
-		// @note RobTop Addition
 		CC_SYNTHESIZE_NV(int, m_targetPrio, TargetPrio);
+		// @note RobTop Addition
+		CCDictionary* m_pForcePrioDict;
+		// @note RobTop Addition
+		int m_forcePrio;
 	};
 
 	// CCDirector
@@ -4688,10 +4957,10 @@ namespace cocos2d
 		virtual void setViewName(const char* pszViewName);
 		const char* getViewName();
 
-		virtual void handleTouchesBegin(int num, int ids[], float xs[], float ys[]);
-		virtual void handleTouchesMove(int num, int ids[], float xs[], float ys[]);
-		virtual void handleTouchesEnd(int num, int ids[], float xs[], float ys[]);
-		virtual void handleTouchesCancel(int num, int ids[], float xs[], float ys[]);
+		virtual void handleTouchesBegin(int num, int ids[], float xs[], float ys[], double timestamp);
+		virtual void handleTouchesMove(int num, int ids[], float xs[], float ys[], double timestamp);
+		virtual void handleTouchesEnd(int num, int ids[], float xs[], float ys[], double timestamp);
+		virtual void handleTouchesCancel(int num, int ids[], float xs[], float ys[], double timestamp);
 
 		const CCRect& getViewPortRect() const;
 
@@ -4701,8 +4970,11 @@ namespace cocos2d
 		virtual void pollInputEvents();
 		void updateDesignResolutionSize();
 
+		// @note RobTop Addition
+    	double getPlatformTimestamp();
+
 	private:
-		void getSetOfTouchesEndOrCancel(CCSet& set, int num, int ids[], float xs[], float ys[]);
+		void getSetOfTouchesEndOrCancel(CCSet& set, int num, int ids[], float xs[], float ys[], double timestamp);
 
 	public:
 		EGLTouchDelegate* m_pDelegate;
@@ -4719,6 +4991,10 @@ namespace cocos2d
 		float  m_fScaleX;
 		float  m_fScaleY;
 		ResolutionPolicy m_eResolutionPolicy;
+
+
+		// RobTop addition, seemingly unused and set to 1.0 in ctor
+		float  m_unkFloat;
 	};
 
 	#ifdef BROMAIDA_IS_PLATFORM_WINDOWS
@@ -4793,8 +5069,9 @@ namespace cocos2d
 		static cocos2d::CCEGLView* createWithFullScreen(std::string const&, bool, GLFWvidmode const&, GLFWmonitor*);
 		static cocos2d::CCEGLView* createWithRect(std::string const&, cocos2d::CCRect, float);
 
-		void toggleFullScreen(bool fullscreen, bool borderless, bool fix);
-
+		/**
+		* @note RobTop addition
+		*/
 		GLFWwindow* getWindow(void) const;
 
 		/**
@@ -4830,11 +5107,14 @@ namespace cocos2d
 		void updateDesignSize(int, int);
 		void updateFrameSize();
 
+		// @note RobTop Addition
+		void pumpRawInput();
+		// @note RobTop Addition
+		void performSafeClipboardPaste();
 
 	public:
 		static CCEGLView* s_pEglView;
-		// @note unknown members here
-		uint8_t m_unkPad[8];
+
 		bool m_bCaptured;
 		// Robtop Removal
 		// HWND m_hWnd;
@@ -4864,7 +5144,6 @@ namespace cocos2d
 		GLFWwindow* m_pMainWindow;
 		// @note RobTop Addition
 		GLFWmonitor* m_pPrimaryMonitor;
-
 	public:
 		// @note RobTop Addition
 		CC_SYNTHESIZE_NV(CCSize, m_obWindowedSize, WindowedSize);
@@ -5310,7 +5589,7 @@ namespace cocos2d
 		// @note RobTop Addition
 		void checkSceneReference(void);
 		// @note RobTop Addition
-		CCScene* getNextScene(void);
+		inline CCScene* getNextScene(void) { return m_pNextScene; }
 		// @note RobTop Addition
 		int levelForSceneInStack(CCScene*);
 		// @note RobTop Addition
@@ -5479,8 +5758,6 @@ namespace cocos2d
 
 		// @note RobTop Addition
 		CC_SYNTHESIZE_NV(bool, m_bFastMenu, FastMenu);
-		// @note RobTop Addition
-		void* m_unknownPtr3;
 
 		// CCEGLViewProtocol will recreate stats labels to fit visible rect
 		friend class CCEGLViewProtocol;
@@ -5723,19 +6000,19 @@ namespace cocos2d
 	class CCTextFieldDelegate
 	{
 	public:
-		virtual bool onTextFieldAttachWithIME(CCTextFieldTTF * sender)
+		virtual bool onTextFieldAttachWithIME(CCTextFieldTTF* sender)
 		{
 			CC_UNUSED_PARAM(sender);
 			return false;
 		}
 
-		virtual bool onTextFieldDetachWithIME(CCTextFieldTTF * sender)
+		virtual bool onTextFieldDetachWithIME(CCTextFieldTTF* sender)
 		{
 			CC_UNUSED_PARAM(sender);
 			return false;
 		}
 
-		virtual bool onTextFieldInsertText(CCTextFieldTTF * sender, const char * text, int nLen, cocos2d::enumKeyCodes)
+		virtual bool onTextFieldInsertText(CCTextFieldTTF* sender, const char * text, int nLen, cocos2d::enumKeyCodes)
 		{
 			CC_UNUSED_PARAM(sender);
 			CC_UNUSED_PARAM(text);
@@ -5769,10 +6046,10 @@ namespace cocos2d
 
 		//char * description();
 
-		static CCTextFieldTTF * textFieldWithPlaceHolder(const char *placeholder, const CCSize& dimensions, CCTextAlignment alignment, const char *fontName, float fontSize);
-		static CCTextFieldTTF * textFieldWithPlaceHolder(const char *placeholder, const char *fontName, float fontSize);
-		bool initWithPlaceHolder(const char *placeholder, const CCSize& dimensions, CCTextAlignment alignment, const char *fontName, float fontSize);
-		bool initWithPlaceHolder(const char *placeholder, const char *fontName, float fontSize);
+		static CCTextFieldTTF* textFieldWithPlaceHolder(const char* placeholder, const CCSize& dimensions, CCTextAlignment alignment, const char* fontName, float fontSize);
+		static CCTextFieldTTF* textFieldWithPlaceHolder(const char* placeholder, const char* fontName, float fontSize);
+		bool initWithPlaceHolder(const char* placeholder, const CCSize& dimensions, CCTextAlignment alignment, const char* fontName, float fontSize);
+		bool initWithPlaceHolder(const char* placeholder, const char* fontName, float fontSize);
 
 		virtual bool attachWithIME();
 
@@ -5819,6 +6096,8 @@ namespace cocos2d
 		virtual bool canDetachWithIME();
 		virtual void insertText(const char * text, int len, cocos2d::enumKeyCodes);
 		virtual void deleteBackward();
+		// @note RobTop Addition
+		virtual void deleteForward();
 		virtual const char * getContentText();
 
 	private:
@@ -6276,8 +6555,12 @@ namespace cocos2d
 			CCHttpClient();
 			bool init(void);
 
-			bool lazyInitThreadSemphore();
+			// @note RobTop Removal
+			// bool lazyInitThreadSemphore();
 			void dispatchResponseCallbacks(float delta);
+
+			// @note RobTop Addition
+			size_t availableThreadCount();
 			
 		private:
 			int _timeoutForConnect;
@@ -6371,6 +6654,9 @@ namespace cocos2d
 			CCScale9Sprite* resizableSpriteWithCapInsets(CCRect capInsets);
 
 			static CCScale9Sprite* create();
+
+			// @note RobTop Addition
+			void setBlendAdditive(bool additive);		
 
 			// optional
 
@@ -6512,6 +6798,9 @@ namespace cocos2d
 			virtual void updateWithHSV(HSV hsv);
 			virtual void updateDraggerWithHSV(HSV hsv);
 
+			// @note RobTop Addition
+			virtual void registerWithTouchDispatcher();
+
 		protected:    
 			void updateSliderPosition(CCPoint location);
 			bool checkSliderPosition(CCPoint location);
@@ -6538,6 +6827,9 @@ namespace cocos2d
 
 			static CCControlHuePicker* create(CCNode* target, CCPoint pos);
 			virtual void setEnabled(bool enabled);
+
+			// @note RobTop Addition
+			virtual void registerWithTouchDispatcher();
 
 		protected:    
 			void updateSliderPosition(CCPoint location);
@@ -6576,6 +6868,10 @@ namespace cocos2d
 		public:
 			// @note RobTop Addition: renamed create to colourPicker
 			static CCControlColourPicker* colourPicker();
+
+			inline static CCControlColourPicker* create() {
+				return colourPicker();
+			}
 
 			virtual bool init();
 			void hueSliderValueChanged(CCObject* sender, CCControlEvent controlEvent);

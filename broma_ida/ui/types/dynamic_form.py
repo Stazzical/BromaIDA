@@ -114,7 +114,7 @@ class DynamicForm(_Form):
 
         self.AddControls(self.controls)
 
-        args = self.CompileEx(self.form)
+        self._Form__args = self.CompileEx(self.form)
 
         self._Form__controls: dict[str, _Form.Control]
 
@@ -125,9 +125,7 @@ class DynamicForm(_Form):
 
             self._Form__controls["___dummyfchgcb"].free()
             self._Form__controls["___dummyfchgcb"] = form_change_cb
-            args[1 if self.modal else 2] = form_change_cb.get_arg()
-
-        self._Form__args = args
+            self._Form__args[1 if self.modal else 2] = form_change_cb.get_arg()
 
         _py_register_compiled_form(self)
 
