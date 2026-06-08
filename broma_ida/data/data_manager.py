@@ -31,6 +31,7 @@ class DataManager:
             self.get("always_overwrite_idb", False)
             self.get("export_return_types", False)
             self.get("export_args_names", False)
+            self.get("skip_missing_function_prompts", True)
 
             self.get("import_types", True)
             self.get("set_default_parser_args", True)

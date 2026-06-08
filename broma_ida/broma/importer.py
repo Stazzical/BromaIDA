@@ -747,7 +747,7 @@ class BromaImporter:
             ida_name = get_ea_name(ida_ea)
             ida_func = get_func(ida_ea)
 
-            if ida_func is None:
+            if ida_func is None and not DataManager().get("skip_missing_function_prompts"):
                 with TempJumpToAddress(ida_ea):
                     if AskPopup(
                             f"{hex(ida_ea)} is not marked as a function by "

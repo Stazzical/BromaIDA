@@ -14,6 +14,7 @@ class SettingsForm(DynamicForm):
     rAlwaysOverwriteIDB: Form.ChkGroupItemControl
     rExportReturnTypes: Form.ChkGroupItemControl
     rExportFunctionArgumentsNames: Form.ChkGroupItemControl
+    rSkipMissingFunctionPrompts: Form.ChkGroupItemControl
 
     rImportTypes: Form.ChkGroupItemControl
     rSetDefaultParserArguments: Form.ChkGroupItemControl
@@ -29,6 +30,7 @@ BromaIDA
 <##General Settings#Do not prompt when there is a mismatch in merge information stored in function comments#Always overwrite function comments with merge information:{rAlwaysOverwriteMergeInformation}>
 <#Do not prompt when there is a mismatch between IDB and Broma.\nInstead overwrite IDB silently#Always overwrite IDB:{rAlwaysOverwriteIDB}>
 <#Skips the Broma hash check that determines if types should be imported.\nBy default, the input Broma file's hash is saved and compared to following imports.\nIf they are the same then BromaIDA will skip importing types.#Disable Broma hash check:{rDisableBromaHashCheck}>
+<#Skips prompts for marking addresses as functions when IDA hasn't marked a binding's address as a function.\nIf enabled, BromeIDA will automatically skip applying the binding and will not mark the address as a function.#Skip missing function prompts:{rSkipMissingFunctionPrompts}>
 <#Should return types be exported.\nIf enabled, only types that aren't TodoReturn are exported\nBecause of this, it is recommended to only enable this if you have already imported types.#Export return types:{rExportReturnTypes}>
 <#Should function arguments' names be exported.\nIf enabled, only argument names that don't match "a[0-9]+" and "p[0-9]+" are exported.#Export function arguments' names:{rExportFunctionArgumentsNames}>{cGeneralSettingsGroup}>
 
@@ -42,7 +44,7 @@ BromaIDA
             "cGeneralSettingsGroup": Form.ChkGroupControl((
                 "rAlwaysOverwriteMergeInformation", "rDisableBromaHashCheck",
                 "rAlwaysOverwriteIDB", "rExportReturnTypes",
-                "rExportFunctionArgumentsNames"
+                "rExportFunctionArgumentsNames", "rSkipMissingFunctionPrompts"
             )),
             "cImportTypesSettingsGroup": Form.ChkGroupControl((
                 "rImportTypes", "rSetDefaultParserArguments",
@@ -70,6 +72,9 @@ BromaIDA
         self.rExportFunctionArgumentsNames.checked = DataManager().get(
             "export_args_names"
         )
+        self.rSkipMissingFunctionPrompts.checked = DataManager().get(
+            "skip_missing_function_prompts"
+        )
 
         self.rImportTypes.checked = DataManager().get("import_types")
         self.rSetDefaultParserArguments.checked = DataManager().get(
@@ -88,7 +93,8 @@ BromaIDA
             self.rDisableBromaHashCheck.id,
             self.rAlwaysOverwriteIDB.id,
             self.rExportReturnTypes.id,
-            self.rExportFunctionArgumentsNames.id
+            self.rExportFunctionArgumentsNames.id,
+            self.rSkipMissingFunctionPrompts.id
         ]:
             if fid == self.rAlwaysOverwriteMergeInformation.id:
                 DataManager().set(
@@ -117,6 +123,13 @@ BromaIDA
                     "export_args_names",
                     bool(self.GetControlValue(
                         self.rExportFunctionArgumentsNames
+                    ))
+                )
+            elif fid == self.rSkipMissingFunctionPrompts.id:
+                DataManager().set(
+                    "skip_missing_function_prompts",
+                    bool(self.GetControlValue(
+                        self.rSkipMissingFunctionPrompts
                     ))
                 )
 
