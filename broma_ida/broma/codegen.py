@@ -68,7 +68,7 @@ class BromaCodegen:
             )
 
             enums = (self._broma_path / "../include/Geode/Enums.hpp").resolve().as_posix()
-            f.write(f'// Enums (dynamically included from "{enums}")')
+            f.write(f'// Enums (dynamically included from "{enums}")\n')
             self._copy_content(f, enums, "enums_only", True)
             self._copy_content(f, "cocos2d.hpp", "parse")
             self._copy_content(f, "fmod.hpp")
