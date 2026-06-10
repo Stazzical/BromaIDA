@@ -95,15 +95,15 @@ class BromaCodegen:
                         f.write(
                             f"namespace {split_c[0]} {{ "
                             f"class {split_c[1]}; "
-                            "}}\n"
+                            "}\n"
                         )
                     elif len(split_c) == 3:
                         f.write(
                             f"namespace {split_c[0]} {{ "
                             f"namespace {split_c[1]} {{ "
                             f"class {split_c[2]};"
-                            "}} "
-                            "}}\n"
+                            "} "
+                            "}\n"
                         )
                 else:
                     f.write(f"class {c};\n")
