@@ -28,6 +28,7 @@ from ida_dirtree import (
     direntry_t as ida_direntry_t,
     DIRTREE_LOCAL_TYPES
 )
+from ida_nalt import get_root_filename
 
 from re import sub
 from pathlib import Path
@@ -142,7 +143,7 @@ class BIUtils:
 
     @staticmethod
     def verify_types(platform: BROMA_PLATFORMS) -> bool:
-        """Verifies the existance and size of types
+        """Verifies the existence and size of types
 
         Returns:
             bool: True on success
@@ -173,12 +174,12 @@ class BIUtils:
             )
         )):
             ida_warning(
-                "Mismatch in cocos2d types! "
+                "Mismatch in Cocos2d types! "
                 "Classes will not be imported!\n"
                 "To fix this, go to the local types window, "
                 "delete BromaIDA folder "
-                "(you might have to right-click > Show folders)\n"
-                "then save the IDB."
+                "(you might have to right-click -> Show folders)\n"
+                "and then save the IDB."
             )
             return False
 
@@ -451,33 +452,155 @@ class BromaImporter:
     """Broma importer of all time using PyBroma now!"""
 
     _target_platform: BROMA_PLATFORMS
-    _file_path: str
+    _bromas_path: Path
     _has_types: bool = False
     _imported_types: list[DirtreeEntry] = []
 
+    broma_files: list[str] = [
+        "Cocos2d.bro",
+        "Extras.bro",
+        "GeometryDash.bro"
+    ]
     bindings: deque[Binding] = deque()
+    classes: dict[str, Class] = {}
     duplicates: dict[int, list[Binding]] = {}
 
-    def _codegen_classes(self, classes: dict[str, Class]) -> bool:
-        """Codegens the file that contains the parsed broma classes
-
-        Args:
-            classes (dict[str, Class])
-
-        Returns:
-            bool
+    def _win_is_cocos_class(self, class_name: str) -> bool:
         """
-        if not HAS_IDACLANG:
-            return False
+        Determine if a class is from the Cocos2d library on Windows.
+        'cocos2d::CCLightning' is an exception due to being a RobTop custom class.
 
+            Args:
+                class_name: str
+
+            Returns:
+                bool
+        """
+        # it's safest to not assume cocos than check if it's an .exe
+        is_dll = get_root_filename().lower().startswith("libcocos2d")
+        is_cocos = (
+            class_name.startswith("cocos2d")
+            or class_name.startswith("pugi")
+        )
+        # custom RobTop class
+        is_exception = (class_name == "cocos2d::CCLightning")
+
+        # libcocos2d.dll
+        if is_dll:
+            return is_cocos and not is_exception
+
+        # GeometryDash.exe
+        return not is_cocos or is_exception
+
+    def _codegen_classes(self):
+        """
+        Codegens the file that contains the parsed broma classes
+        """
         BromaCodegen(
             self._target_platform,
-            classes,
+            self.classes,
             IDAUtils.get_ida_path("plugins") / "broma_ida" / "types",
-            Path("/".join(Path(self._file_path).parts[:-1]))
+            self._bromas_path
         ).write()
+    
+    def _preload_broma_files(self):
+        if self._target_platform == "ios":
+            self.broma_files.append("FMOD.bro")
 
-        return True
+        if self._target_platform in ("m1", "imac", "ios"):
+            self.broma_files.append("Kazmath.bro")
+    
+    def _load_broma_classes(self):
+        for bfile in self.broma_files:
+            bro_path = self._bromas_path / bfile
+            if not bro_path.exists():
+                continue
+
+            root = Root(str(bro_path))
+
+            for cls in root.classes:
+                self.classes[cls.name] = cls
+    
+    def _load_broma_bindings(self):
+        """
+        Gather all the needed bindings from the Broma files.
+        """
+        # finding duplicate binds on Android is mostly impossible
+        # due to the compiler not inlining functions
+        if self._target_platform.startswith("android"):
+            for class_name, broma_class in self.classes.items():
+                for field in broma_class.fields:
+                    function_field = field.getAsFunctionBindField()
+
+                    if function_field is None:
+                        continue
+
+                    self.bindings.append(
+                        Binding.from_pybroma(class_name, function_field)
+                    )
+        else:
+            for class_name, broma_class in self.classes.items():
+                if self._target_platform == "win" and self._win_is_cocos_class(class_name):
+                    continue
+
+                for field in broma_class.fields:
+                    function_field = field.getAsFunctionBindField()
+
+                    if function_field is None:
+                        continue
+
+                    func_addr = int(
+                        function_field.binds.platforms_as_dict().get(
+                            self._target_platform, "-0x1"
+                        ), 16
+                    )
+
+                    if func_addr == -1:
+                        continue
+
+                    function = function_field.prototype
+
+                    # Runs only for the first time an address has a duplicate
+                    if func_addr in self.bindings:
+                        dup_binding = self.bindings[
+                            self.bindings.index(func_addr) # type: ignore
+                        ]
+                        error_location = \
+                            f"{class_name}::{function.name} " \
+                            f"and {dup_binding.short_info}"
+
+                        if f"{class_name}::{function.name}" == \
+                                dup_binding.qualified_name:
+                            print(
+                                "[!] BromaImporter: Duplicate binding with "
+                                f"same qualified name! ({error_location})"
+                            )
+                            continue
+                        elif class_name == dup_binding.class_name:
+                            print(
+                                "[!] BromaImporter: Duplicate binding within "
+                                f"same class! ({error_location})"
+                            )
+                            continue
+
+                        print(
+                            "[!] BromaImporter: Duplicate binding! "
+                            f"({class_name}::{function.name} "
+                            f"and {dup_binding.short_info})"
+                        )
+                        self.bindings.remove(dup_binding)
+                        self.duplicates[func_addr] = []
+                        self.duplicates[func_addr].append(dup_binding)
+
+                    if func_addr in self.duplicates:
+                        self.duplicates[func_addr].append(
+                            Binding.from_pybroma(class_name, function_field)
+                        )
+                        continue
+
+                    self.bindings.append(
+                        Binding.from_pybroma(class_name, function_field)
+                    )
 
     def _pre_import_types(self):
         """Pre-import types hook"""
@@ -517,7 +640,7 @@ class BromaImporter:
             DIRTREE_LOCAL_TYPES, "/BromaIDA", self._imported_types
         )
 
-    def __init__(self, platform: BROMA_PLATFORMS, filepath: str):
+    def __init__(self, platform: BROMA_PLATFORMS, filepath: Path):
         """Initializes a BromaImporter instance
 
         Args:
@@ -526,15 +649,15 @@ class BromaImporter:
         """
         self._reset()
         self._target_platform = platform
-        self._file_path = filepath
+        self._bromas_path = filepath
 
-    def parse_file(self):
+    def parse_bromas(self):
         """
         Parses the broma file passed into the constructor
         and imports the members and methods
         """
-        root = Root(self._file_path)
         import_types: bool = DataManager().get("import_types")
+        self._preload_broma_files()
 
         if not HAS_IDACLANG and import_types:
             ida_warning(
@@ -544,36 +667,44 @@ class BromaImporter:
             DataManager().set("import_types", False)
             import_types = False
 
-        if import_types and not DataManager().get("disable_broma_hash_check"):
-            cur_hash: str
-            with open(self._file_path, "rb", buffering=0) as f:
-                cur_hash = file_digest(f, "sha256").hexdigest()  # type: ignore
+        # Hash check for bindings
+        if import_types:
+            if not DataManager().get("disable_broma_hash_check"):
+                cur_hash: str = ""
+                for bfile in self.broma_files:
+                    with open(str(self._bromas_path / bfile), "rb", buffering = 0) as f:
+                        cur_hash += file_digest(f, "sha256").hexdigest()
 
-            last_broma_info = DataManager().get(
-                "last_broma_info", (self._target_platform, "")
-            )
+                cur_hash = cur_hash[:-1]
 
-            if last_broma_info[0] == self._target_platform and \
-                    last_broma_info[1] != "":
-                if last_broma_info[1] == cur_hash:
-                    print(
-                        "[!] BromaImporter: Detected same Broma hash. "
-                        "Will not import types..."
-                    )
-                    import_types = False
-            elif last_broma_info[1] == "":
-                DataManager().set(
-                    "last_broma_info", (self._target_platform, cur_hash)
+                last_broma_info = DataManager().get(
+                    "last_broma_info", (self._target_platform, "")
                 )
 
-        if import_types:
+                if last_broma_info[0] == self._target_platform and \
+                        last_broma_info[1] != "":
+                    if last_broma_info[1] == cur_hash:
+                        print(
+                            "[!] BromaImporter: Detected same Broma files hash. "
+                            "Will not import types..."
+                        )
+                        import_types = False
+                elif last_broma_info[1] == "":
+                    DataManager().set(
+                        "last_broma_info", (self._target_platform, cur_hash)
+                    )
+            else:
+                print(
+                    "[!] BromaImporter: Broma files hash check disabled. "
+                    "Skipping..."
+                )
+            
             set_c_header_path(
                 BIUtils.get_stl_headers_path(self._target_platform)
             )
 
-        if HAS_IDACLANG and import_types:
-            if BIUtils.verify_types(self._target_platform) and \
-                    self._codegen_classes(root.classesAsDict()):
+            if BIUtils.verify_types(self._target_platform):
+                self._codegen_classes()
                 srclang_parser = IDAUtils.get_srclang_parser()
                 select_srclang_parser_by_name(srclang_parser)
 
@@ -599,7 +730,7 @@ class BromaImporter:
                         None,
                         IDAUtils.get_ida_path(
                             "plugins/broma_ida/types/codegen/"
-                            f"{self._target_platform}.hpp"
+                            f"{self._target_platform}-{get_root_filename().lower().split(".")[0]}.hpp"
                         ).as_posix(),
                         True
                     )
@@ -610,77 +741,7 @@ class BromaImporter:
                     DIRTREE_LOCAL_TYPES, "/BromaIDA"
                 )) != 0
 
-        if self._target_platform.startswith("android"):
-            for class_name, broma_class in root.classesAsDict().items():
-                for field in broma_class.fields:
-                    function_field = field.getAsFunctionBindField()
-
-                    if function_field is None:
-                        continue
-
-                    self.bindings.append(
-                        Binding.from_pybroma(class_name, function_field)
-                    )
-        else:
-            for class_name, broma_class in root.classesAsDict().items():
-                for field in broma_class.fields:
-                    function_field = field.getAsFunctionBindField()
-
-                    if function_field is None:
-                        continue
-
-                    func_addr = int(
-                        function_field.binds.platforms_as_dict().get(
-                            self._target_platform, "-0x1"
-                        ), 16
-                    )
-
-                    if func_addr == -1:
-                        continue
-
-                    function = function_field.prototype
-
-                    # Runs only for the first time an address has a duplicate
-                    if func_addr in self.bindings:
-                        dup_binding = self.bindings[
-                            self.bindings.index(func_addr)  # type: ignore
-                        ]
-                        error_location = \
-                            f"{class_name}::{function.name} " \
-                            f"and {dup_binding.short_info}"
-
-                        if f"{class_name}::{function.name}" == \
-                                dup_binding.qualified_name:
-                            print(
-                                "[!] BromaImporter: Duplicate binding with "
-                                f"same qualified name! ({error_location})"
-                            )
-                            continue
-                        elif class_name == dup_binding.class_name:
-                            print(
-                                "[!] BromaImporter: Duplicate binding within "
-                                f"same class! ({error_location})"
-                            )
-                            continue
-
-                        print(
-                            "[!] BromaImporter: Duplicate binding! "
-                            f"({class_name}::{function.name} "
-                            f"and {dup_binding.short_info})"
-                        )
-                        self.bindings.remove(dup_binding)
-                        self.duplicates[func_addr] = []
-                        self.duplicates[func_addr].append(dup_binding)
-
-                    if func_addr in self.duplicates:
-                        self.duplicates[func_addr].append(
-                            Binding.from_pybroma(class_name, function_field)
-                        )
-                        continue
-
-                    self.bindings.append(
-                        Binding.from_pybroma(class_name, function_field)
-                    )
+        self._load_broma_bindings()
 
         if HAS_IDACLANG and import_types and self._has_types:
             self._post_import_types()
@@ -689,11 +750,11 @@ class BromaImporter:
             f"\n\n[+] BromaImporter: Read {len(self.bindings)} "
             f"{IDAUtils.get_platform_printable()} bindings "
             f"and {len(self.duplicates)} duplicates "
-            f"from {self._file_path}\n\n"
+            f"from {str(self._bromas_path)}\n\n"
         )
 
     def import_into_idb(self):
-        """Imports the bindings into the current idb"""
+        """Imports the bindings into the current IDB"""
         if self._target_platform.startswith("android"):
             if not self._has_types:
                 return
@@ -854,6 +915,9 @@ class BromaImporter:
         """Resets a BromaParser instance because not doing so results
         in a re-run of the script populating the same bindings list"""
         self._target_platform = ""  # type: ignore
-        self._file_path = ""
+        self._bromas_path = Path()
+        self._primary_bindings = ""
+        self.broma_files.clear()
         self.bindings.clear()
+        self.classes.clear()
         self.duplicates.clear()

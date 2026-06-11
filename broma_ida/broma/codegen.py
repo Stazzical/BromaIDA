@@ -1,12 +1,15 @@
 from typing import Literal
 from io import TextIOWrapper
 from pathlib import Path
+import re
 
 from pybroma import Class, Root
 
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.class_builder.class_builder import ClassBuilder
 from broma_ida.utils import IDAUtils
+
+from ida_nalt import get_root_filename
 
 
 class BromaCodegen:
@@ -31,27 +34,28 @@ class BromaCodegen:
         self,
         platform: BROMA_PLATFORMS,
         broma_classes: dict[str, Class],
-        path: Path,
+        types_path: Path,
         broma_path: Path
     ):
         self._target_platform = platform
         self._classes = broma_classes
-        self._path = path
+        self._types_path = types_path
         self._broma_path = broma_path
 
-        (self._path / "codegen").mkdir(parents=True, exist_ok=True)
+        (self._types_path / "codegen").mkdir(parents=True, exist_ok=True)
 
     def write(self):
         """Dumps codegenned classes, structs and enums
-        to the path supplied in __init__
+        to the path supplied in __init__ as a '.hpp' file
+        named after the target platform.
 
         Args:
             path (Path)
         """
         with open(
-            self._path / "codegen" / f"{self._target_platform}.hpp",
+            self._types_path / "codegen" / f"{self._target_platform}-{get_root_filename().lower().split(".")[0]}.hpp",
             "w",
-            buffering=10 * 1024 * 1024,
+            buffering = 10 * 1024 * 1024
         ) as f:
             f.write(
                 self.FILE_HEADER.format_map({
@@ -67,6 +71,7 @@ class BromaCodegen:
                 })
             )
 
+            # Set up ready-made definitions for IDAClang to parse
             enums = (self._broma_path / "../include/Geode/Enums.hpp").resolve().as_posix()
             f.write(f'// Enums (dynamically included from "{enums}")\n')
             self._copy_content(f, enums, "enums_only", True)
@@ -77,17 +82,24 @@ class BromaCodegen:
 
             f.flush()
 
-            # now we codegen the Broma file
-            f.write("// Broma\n\n")
+            # now we codegen the Broma files
+            f.write("// Broma classes\n\n")
 
-            f.write("// typdefs\n")
-            f.write("enum class TodoReturn {}; // :troll:\n")
+            f.write("// typedefs\n")
+            f.write("enum class TodoReturn {}; // Geode placeholder for unknown return types\n")
             f.write("\n")
 
             f.flush()
 
-            f.write("// class fwddec\n")
+            f.write("// class forward declarations\n")
             for c in self._classes.keys():
+                # cocos2d::CCLightning class is already defined in cocos2d.hpp
+                if (
+                    self._target_platform == "win"
+                    and (c.startswith("cocos2d") or c.startswith("pugi"))
+                ):
+                    continue
+                
                 if "::" in c:
                     split_c = c.split("::")
 
@@ -111,10 +123,14 @@ class BromaCodegen:
 
             f.flush()
 
-            f.write("// extras\n")
+            cocos_defined = self._list_class_definitions("cocos2d.hpp")
+            f.write("// Cocos2d.bro (only classes not already defined in cocos2d.hpp)\n")
             for broma_class in Root(
-                    str(self._broma_path / "Extras.bro")
+                str(self._broma_path / "Cocos2d.bro")
             ).classes:
+                if broma_class.name in cocos_defined:
+                    continue
+
                 f.write(
                     ClassBuilder(self._target_platform, broma_class).get_str()
                 )
@@ -122,8 +138,14 @@ class BromaCodegen:
 
             f.flush()
 
-            f.write("// delegates and non-polymorphic classes\n")
+            f.write("// Delegates and non-polymorphic classes\n")
             for _, broma_class in self._classes.items():
+                if (
+                    self._target_platform == "win"
+                    and (broma_class.name.startswith("cocos2d") or broma_class.name.startswith("pugi"))
+                ):
+                    continue
+
                 if len(broma_class.superclasses) != 0:
                     continue
 
@@ -134,8 +156,14 @@ class BromaCodegen:
 
             f.flush()
 
-            f.write("// classes\n")
+            f.write("// Polymorphic classes\n")
             for _, broma_class in self._classes.items():
+                if (
+                    self._target_platform == "win"
+                    and (broma_class.name.startswith("cocos2d") or broma_class.name.startswith("pugi"))
+                ):
+                    continue
+
                 if len(broma_class.superclasses) == 0:
                     continue
 
@@ -146,8 +174,8 @@ class BromaCodegen:
 
             f.flush()
 
-            # Some STL types need declaration of either cocos2d or
-            # broma classes, so we put this at the very bottom
+            # Some STL types need declaration of either Cocos2d or
+            # Broma classes, so we put this at the very bottom
             # of the codegenned header
             self._copy_content(f, "stl_types.hpp", "filter")
 
@@ -168,7 +196,7 @@ class BromaCodegen:
 
         """
         # detect if we have already passed an absolute path for the file
-        src_path = Path(fname) if Path(fname).is_absolute() else (self._path / fname)
+        src_path = Path(fname) if Path(fname).is_absolute() else (self._types_path / fname)
 
         with open(src_path) as fr:
             if not no_header_comment:
@@ -195,6 +223,69 @@ class BromaCodegen:
         return f"""BROMAIDA_PLATFORM_{
             plat_to_macro_suffix[self._target_platform]
         }"""
+    
+    def _list_class_definitions(self, fname: str) -> set[str]:
+        src_path = self._types_path / fname
+        out: set[str] = set()
+
+        scopes: list[tuple[str, str, int]] = []
+        pending_namespace: str | None = None
+        brace_depth = 0
+
+        namespace_regex = re.compile(
+            r"^\s*namespace\s+(\w+)\s*$"
+        )
+
+        class_regex = re.compile(
+            r"^\s*(class|struct)\s+(\w+)"
+        )
+
+        with open(src_path) as f:
+            for line in f:
+                if pending_namespace and line.startswith("{"):
+                    scopes.append(
+                        ("namespace", pending_namespace, brace_depth + 1)
+                    )
+                    pending_namespace = None
+
+                if m := namespace_regex.match(line):
+                    pending_namespace = m.group(1)
+                    continue
+
+                if m := class_regex.match(line):
+                    kind, name = m.groups()
+
+                    inside_class = any(
+                        scope_kind in ("class", "struct")
+                        for scope_kind, _, _ in scopes
+                    )
+
+                    # only record namespace-level classes
+                    if not inside_class:
+                        namespaces = [
+                            scope_name
+                            for scope_kind, scope_name, _ in scopes
+                            if scope_kind == "namespace"
+                        ]
+
+                        out.add(
+                            "::".join(namespaces + [name])
+                        )
+
+                    scopes.append(
+                        (kind, name, brace_depth + 1)
+                    )
+
+                brace_depth += line.count("{")
+                brace_depth -= line.count("}")
+
+                while (
+                    scopes
+                    and brace_depth < scopes[-1][2]
+                ):
+                    scopes.pop()
+
+        return out
 
     def _filter_relative_includes(self, lines: list[str]) -> list[str]:
         """Comments out relative includes from a list of lines
@@ -225,7 +316,7 @@ class BromaCodegen:
                 lines[i] = f"// {lines[i]}"
 
                 include_path = e.split('"')[1]
-                with open(self._path / include_path) as fr:
+                with open(self._types_path / include_path) as fr:
                     lines[i+1:i+1] = [*fr.readlines(), "\n\n"]
 
         return lines

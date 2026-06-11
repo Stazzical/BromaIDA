@@ -8,6 +8,7 @@ from idaapi import (
 )
 from ida_kernwin import ask_file
 from idautils import Names
+from ida_nalt import get_root_filename
 
 from broma_ida.utils import stop, path_exists, IDAUtils
 from broma_ida.broma.importer import BromaImporter
@@ -18,6 +19,7 @@ from broma_ida.data.data_manager import DataManager
 
 from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.main_form import MainForm
+from broma_ida.ui.directory_input_form import DirectoryInputForm
 
 
 VERSION = IDAUtils.SCRIPT_VERSION = "7.3.1"
@@ -30,26 +32,29 @@ PLUGIN_HOTKEY = "Ctrl+Shift+B"
 def on_import(form: MainForm, code: int = 0):
     form.Close(1)
 
-    file_path: str = ask_file(False, "GeometryDash.bro", "bro")
+    platform = IDAUtils.get_platform()
 
-    if not path_exists(file_path, ".bro"):
-        SimplePopup("Please select a valid file!", "Cancel").show()
+    dir_form = DirectoryInputForm("Select folder containing .bro files")
+    ok = dir_form.show()
+
+    if ok != 1:
         stop()
 
-    broma_importer = BromaImporter(IDAUtils.get_platform(), file_path)
-    broma_importer.parse_file()
+    bromas_dir = str(dir_form.saved_controls.iDir)
+
+    broma_importer = BromaImporter(platform, Path(bromas_dir))
+    broma_importer.parse_bromas()
     broma_importer.import_into_idb()
 
-    print("[+] BromaIDA: Finished importing bindings from Broma file")
+    print("[+] BromaIDA: Finished importing bindings from Broma files.")
     SimplePopup(
         "Finished importing "
         f"{IDAUtils.get_platform_printable()} "
-        "bindings from Broma file.",
+        "bindings from Broma files.",
         "OK"
     ).show()
 
     DataManager().close()
-
 
 def on_export(form: MainForm, code: int = 0):
     form.Close(1)
@@ -58,7 +63,7 @@ def on_export(form: MainForm, code: int = 0):
 
     if platform.startswith("android"):
         SimplePopup(
-            "Cannot export bindings from Android binary!", "Cancel"
+            "Cannot export bindings from Android binary!", "OK"
         ).show()
         stop()
 
@@ -68,7 +73,7 @@ def on_export(form: MainForm, code: int = 0):
     file_path: str = ask_file(False, "GeometryDash.bro", "bro")
 
     if not path_exists(file_path, ".bro"):
-        SimplePopup("Please select a valid file!", "Cancel").show()
+        SimplePopup("Please select a valid file!", "OK").show()
         stop()
 
     broma_exporter = BromaExporter(platform, file_path)
