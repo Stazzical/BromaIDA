@@ -667,13 +667,15 @@ class BromaImporter:
             DataManager().set("import_types", False)
             import_types = False
 
+        self._load_broma_classes()
+
         # Hash check for bindings
         if import_types:
             if not DataManager().get("disable_broma_hash_check"):
                 cur_hash: str = ""
                 for bfile in self.broma_files:
                     with open(str(self._bromas_path / bfile), "rb", buffering = 0) as f:
-                        cur_hash += file_digest(f, "sha256").hexdigest()
+                        cur_hash += file_digest(f, "sha256").hexdigest() + ","
 
                 cur_hash = cur_hash[:-1]
 
@@ -916,8 +918,12 @@ class BromaImporter:
         in a re-run of the script populating the same bindings list"""
         self._target_platform = ""  # type: ignore
         self._bromas_path = Path()
-        self._primary_bindings = ""
-        self.broma_files.clear()
+
+        self.broma_files = [
+            "Cocos2d.bro",
+            "Extras.bro",
+            "GeometryDash.bro"
+        ]
         self.bindings.clear()
         self.classes.clear()
         self.duplicates.clear()
