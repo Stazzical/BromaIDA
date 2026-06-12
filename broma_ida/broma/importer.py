@@ -519,6 +519,13 @@ class BromaImporter:
             root = Root(str(bro_path))
 
             for cls in root.classes:
+                if cls.name in self.classes:
+                    print(
+                        "[!] BromaImporter: Duplicate class definition! "
+                        f"({cls.name} from {bfile}) "
+                        "Overwriting..."
+                    )
+                
                 self.classes[cls.name] = cls
     
     def _load_broma_bindings(self):
