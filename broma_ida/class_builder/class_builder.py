@@ -13,12 +13,10 @@ class ClassBuilder:
         """Converts a Binding to a class string"""
         self._class_str = f"class {self._broma_class.name}"
 
-        if len(self._broma_class.superclasses) != 0:
-            self._class_str += f""" : public {
-                ", ".join(self._broma_class.superclasses)
-            }\n{{\npublic:\n"""
-        else:
-            self._class_str += "\n{\npublic:\n"
+        bases = ", ".join(f"public {cls}" for cls in self._broma_class.superclasses)
+        self._class_str += f" : {bases}" if bases else ""
+        
+        self._class_str += "\n{\npublic:\n"
 
         has_left_functions: bool = False
 
