@@ -1,6 +1,6 @@
 from typing import cast, Final, Union
 
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass
 
 from re import sub
 
@@ -26,15 +26,10 @@ class STLUtils:
         # not really a templated type, but whatever
         "std::string": "std::basic_string<char, std::char_traits<char>, std::allocator<char>>"  # noqa: E501
     }
-    """Dictionary of STL type to its expanded form."""
+    """Dictionary of STL types to their expanded forms."""
 
     has_two_templates = lambda s: "{1}" in s  # noqa" E731
-    """Does the STL type take 2 templates."""
-
-    format_ptr = lambda pt: sub(  # noqa: E731
-        r"([^ ])\*", r"\1 *", pt
-    )
-    """IDA is east pointer (ew)"""
+    """True if the STL type takes 2 templates."""
 
     strip_crp = lambda tt: (  # noqa: E731
         cast(str, tt)
@@ -47,9 +42,39 @@ class STLUtils:
     """Strips const, reference and pointer from the type."""
 
     @staticmethod
+    def normalize_type(t: str) -> str:
+        """
+        Normalize the type string to the following standards:
+        - gd:: -> std::
+        - east `const` moved to west position
+        - pointer/reference attached to type with no spaces
+
+        Args:
+            t (str)
+
+        Returns:
+            str
+        """
+        t = t.strip().replace("gd::", "std::")
+
+        # normalize east const to west const
+        t = sub(
+            r"^((?:(?!const\s*[*&]).)+?)\s+const\s*([*&])$",
+            r"const \1\2",
+            t
+        )
+
+        # normalize east pointer/reference to west pointer/reference
+        t = sub(r"\s+([*&])", r"\1", t)
+
+        return t
+
+    @staticmethod
     def split_stl_type(stl_t: str) -> STL_TREE:
-        """Splits an STL type string into a list of STL type name
-        and contained types.
+        """
+        Splits an STL type string into a list of STL type name
+        and contained types. This function assumes `stl_t` types are
+        normalized first using `normalize_type`.
 
         Args:
             stl_t (str): STL type string.
@@ -59,42 +84,55 @@ class STLUtils:
                 ["", "std::type", ["const", "T1", ""], ["", "T2, "*"], "&"] will
                 be returned.
         """  # noqa: E501
-        ptr = stl_t[-1] if stl_t[-1] in ("*", "&") else ""
-        const = "const" if stl_t.startswith("const") or \
-            stl_t.removesuffix(ptr).rstrip().endswith("const") else ""
+        stl_t = stl_t.strip()
+        ptr = ""
+        const = ""
 
-        if "std::" not in stl_t or STLUtils.strip_crp(stl_t) == "std::string":
-            return [const, STLUtils.strip_crp(stl_t), ptr]
+        # extract trailing pointer/reference
+        if stl_t[-1] in ("*", "&"):
+            ptr = stl_t[-1]
+            stl_t = stl_t[:-1].rstrip()
 
-        split_stl_t: STL_TREE = [const]
+        # extract leading const
+        if stl_t.startswith("const "):
+            const = "const"
+            stl_t = stl_t[6:].lstrip()  # len("const ") == 6
+
+        stripped = STLUtils.strip_crp(stl_t)
+        if "std::" not in stl_t or stripped == "std::string":
+            return [const, stripped, ptr]
+
+        # find the outermost template bracket
+        template_start = stl_t.index("<")
+        type_name = stl_t[:template_start].strip()
+        # everything between outermost < and >
+        inner = stl_t[template_start + 1:stl_t.rindex(">")]
+
+        result: STL_TREE = [const, type_name]
+
+        # split inner by commas at nest depth 0
         nest_count = 0
-        current_token: str = ""
+        current_token = ""
 
-        stl_t = stl_t.replace(const, "")
-        split_stl_t.append(stl_t[:stl_t.index("<")].lstrip())
-        stl_t = stl_t[stl_t.index("<")+1:stl_t.rindex(">")]
-
-        for i, c in enumerate(stl_t):
+        for i, c in enumerate(inner):
             if c == "<":
                 nest_count += 1
             elif c == ">":
                 nest_count -= 1
 
-            if nest_count == 0 and (c == "," or i == len(stl_t) - 1):
-                if c != ",":
+            if nest_count == 0 and (c == "," or i == len(inner) - 1):
+                if i == len(inner) - 1 and c != ",":
                     current_token += c
 
-                split_stl_t.append(
+                result.append(
                     STLUtils.split_stl_type(current_token.strip())
                 )
-                if c != ",":
-                    split_stl_t.append(ptr)
-
                 current_token = ""
             else:
                 current_token += c
 
-        return split_stl_t
+        result.append(ptr)
+        return result
 
     @staticmethod
     def expand_stl_type(stl_t: str) -> str:
@@ -163,23 +201,83 @@ class STLUtils:
 
         return flatten_and_expand(STLUtils.split_stl_type(stl_t))
 
+    @staticmethod
+    def extract_bare_types(raw: str) -> set[str]:
+        """
+        Cycle through all bare type names from a type string.
+
+        Args:
+            raw (str)
+
+        Returns:
+            set[str]
+        """
+        if "std::" in raw:
+            return {
+                bare
+                for bare, _ in STLUtils.stl_value_types(raw)
+                if bare
+            }
+
+        bare = STLUtils.strip_crp(raw).strip()
+        return {bare} if bare else set()
+
+    @staticmethod
+    def stl_value_types(
+        raw: str
+    ) -> list[tuple[str, bool]]:
+        """
+        Walk split_stl_type tree, yielding (bare_type, is_by_value)
+        for every leaf type.
+        """
+        tree = STLUtils.split_stl_type(raw)
+        results: list[tuple[str, bool]] = []
+
+        def walk(node, parent_by_value: bool = True):
+            # STLTree list
+            if isinstance(node, list):
+                ptr_slot = node[-1] if isinstance(node[-1], str) else ""
+                by_value = "*" not in ptr_slot and "&" not in ptr_slot
+
+                for item in node:
+                    if isinstance(item, list):
+                        walk(item, by_value)
+                    elif isinstance(item, str):
+                        if item in ("const", "*", "&", ""):
+                            continue
+                        if item.startswith("std::"):
+                            continue
+
+                        bare = STLUtils.strip_crp(item)
+                        if bare:
+                            results.append((bare, by_value))
+            elif isinstance(node, str):
+                if node in ("const", "*", "&", ""):
+                    return
+                if node.startswith("std::"):
+                    return
+
+                bare = STLUtils.strip_crp(node)
+                if bare:
+                    results.append((bare, parent_by_value))
+
+        walk(tree)
+        return results
+
 
 @dataclass
 class ArgType:
-    """An argument type."""
+    """A function argument type."""
 
     type: str
     name: str = ""
     reg: str = ""
 
     def __post_init__(self):
-        if self.name == "":
-            raise Exception("ArgType 'name' must be provided!")
+        STLUtils.normalize_type(self.type)
 
         if "std::" in self.type:
-            self.type = STLUtils.format_ptr(
-                STLUtils.expand_stl_type(self.type)
-            )
+            self.type = STLUtils.expand_stl_type(self.type)
 
     @property
     def stripped_type(self) -> str:
@@ -194,24 +292,32 @@ class ArgType:
         if self.name == "":
             return self.type
 
-        return f"""{self.type} {self.name}{
+        return (
+            f"{self.type} {self.name}"
             f"@<{self.reg}>" if self.reg else ""
-        }"""
+        )
 
-    def __eq__(self, value: object) -> bool:
-        if isinstance(value, str):
-            return self.type == value
-        elif is_dataclass(value):
-            return self.__dataclass_fields__ == value.__dataclass_fields__
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self.type == other
 
-        return False
+        if isinstance(other, ArgType) or isinstance(other, RetType):
+            return self.type == other.type
+
+        return NotImplemented
+
+    def __hash__(self):
+        return hash(self.type)
 
 
 class RetType(ArgType):
-    """A return type."""
+    """A function return type."""
 
     def __post_init__(self):
-        if "std::" in self.type:
-            self.type = STLUtils.format_ptr(
-                STLUtils.expand_stl_type(self.type)
-            )
+        if self.type == "":
+            self.type = "void"
+        else:
+            STLUtils.normalize_type(self.type)
+
+            if "std::" in self.type:
+                self.type = STLUtils.expand_stl_type(self.type)
