@@ -3,8 +3,9 @@ from io import TextIOWrapper
 from pathlib import Path
 import re
 
-from pybroma import Class, Root
+from pybroma import Class
 
+from broma_ida.broma.class_graph import ClassGraph
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.class_builder.class_builder import ClassBuilder
 from broma_ida.utils import IDAUtils
@@ -26,9 +27,47 @@ class BromaCodegen:
 #define PAD(size) unsigned char STR_CONCAT(__pad, __LINE__)[size]\n\n"""  # noqa: E501
 
     _classes: dict[str, Class]
-    _path: Path
     _target_platform: BROMA_PLATFORMS
+    _types_path: Path
     _broma_path: Path
+
+    _graph: ClassGraph
+    _defined_classes: set[str]
+    _file_path: Path
+
+    def _emit_class(
+        self,
+        f: TextIOWrapper,
+        cls: Class
+    ):
+        if cls is None:
+            return
+
+        if cls.name in self._defined_classes:
+            return
+
+        f.write(
+            ClassBuilder(
+                self._target_platform,
+                cls,
+                self._graph
+            ).get_str()
+        )
+
+        self._defined_classes.add(cls.name)
+
+    @staticmethod
+    def _emit_fwd_decl(f, name: str):
+        if "::" in name:
+            parts = name.split("::")
+            bare = parts[-1]
+            open_ns = " ".join(
+                f"namespace {ns} {{" for ns in parts[:-1]
+            )
+            close_ns = " }" * (len(parts) - 1)
+            f.write(f"{open_ns} class {bare}; {close_ns}\n")
+        else:
+            f.write(f"class {name};\n")
 
     def __init__(
         self,
@@ -44,16 +83,24 @@ class BromaCodegen:
 
         (self._types_path / "codegen").mkdir(parents=True, exist_ok=True)
 
-    def write(self):
-        """Dumps codegenned classes, structs and enums
+    def write(self) -> Path:
+        """
+        Dumps codegenned classes, structs and enums
         to the path supplied in __init__ as a '.hpp' file
-        named after the target platform.
+        named after the target platform and binary name.
 
         Args:
             path (Path)
+
+        Returns:
+            Path
         """
+        self._defined_classes = set()
+        self._graph = ClassGraph(self._classes)
+        self._file_path = self._types_path / "codegen" / f"{self._target_platform}-{get_root_filename().lower().split(".")[0]}.hpp"
+
         with open(
-            self._types_path / "codegen" / f"{self._target_platform}-{get_root_filename().lower().split(".")[0]}.hpp",
+            self._file_path,
             "w",
             buffering = 10 * 1024 * 1024
         ) as f:
@@ -72,6 +119,7 @@ class BromaCodegen:
             )
 
             # Set up ready-made definitions for IDAClang to parse
+            # _copy_content also populates _defined_classes from these files
             enums = (self._broma_path / "../include/Geode/Enums.hpp").resolve().as_posix()
             f.write(f'// Enums (dynamically included from "{enums}")\n')
             self._copy_content(f, enums, "enums_only", True)
@@ -91,85 +139,20 @@ class BromaCodegen:
 
             f.flush()
 
+            # some classes from member/function argument/return types
+            # need to be forward declared for them to work
             f.write("// class forward declarations\n")
-            for c in self._classes.keys():
-                # cocos2d::CCLightning class is already defined in cocos2d.hpp
-                if (
-                    self._target_platform == "win"
-                    and (c.startswith("cocos2d") or c.startswith("pugi"))
-                ):
-                    continue
-                
-                if "::" in c:
-                    split_c = c.split("::")
-
-                    if len(split_c) == 2:
-                        f.write(
-                            f"namespace {split_c[0]} {{ "
-                            f"class {split_c[1]}; "
-                            "}\n"
-                        )
-                    elif len(split_c) == 3:
-                        f.write(
-                            f"namespace {split_c[0]} {{ "
-                            f"namespace {split_c[1]} {{ "
-                            f"class {split_c[2]};"
-                            "} "
-                            "}\n"
-                        )
-                else:
-                    f.write(f"class {c};\n")
+            for class_name in self._graph.forward_declarations:
+                self._emit_fwd_decl(f, class_name) # type: ignore
             f.write("\n")
 
             f.flush()
 
-            cocos_defined = self._list_class_definitions("cocos2d.hpp")
-            f.write("// Cocos2d.bro (only classes not already defined in cocos2d.hpp)\n")
-            for broma_class in Root(
-                str(self._broma_path / "Cocos2d.bro")
-            ).classes:
-                if broma_class.name in cocos_defined:
-                    continue
-
-                f.write(
-                    ClassBuilder(self._target_platform, broma_class).get_str()
-                )
-            f.write("\n")
-
-            f.flush()
-
-            f.write("// Delegates and non-polymorphic classes\n")
-            for _, broma_class in self._classes.items():
-                if (
-                    self._target_platform == "win"
-                    and (broma_class.name.startswith("cocos2d") or broma_class.name.startswith("pugi"))
-                ):
-                    continue
-
-                if len(broma_class.superclasses) != 0:
-                    continue
-
-                f.write(
-                    ClassBuilder(self._target_platform, broma_class).get_str()
-                )
-            f.write("\n")
-
-            f.flush()
-
-            f.write("// Polymorphic classes\n")
-            for _, broma_class in self._classes.items():
-                if (
-                    self._target_platform == "win"
-                    and (broma_class.name.startswith("cocos2d") or broma_class.name.startswith("pugi"))
-                ):
-                    continue
-
-                if len(broma_class.superclasses) == 0:
-                    continue
-
-                f.write(
-                    ClassBuilder(self._target_platform, broma_class).get_str()
-                )
+            # get the right order of inheritance for importing classes
+            # by-value member/function argument/return types come before their use
+            for class_name in self._graph.class_order:
+                cls = self._classes.get(class_name)
+                self._emit_class(f, cls) # type: ignore
             f.write("\n\n")
 
             f.flush()
@@ -179,38 +162,50 @@ class BromaCodegen:
             # of the codegenned header
             self._copy_content(f, "stl_types.hpp", "filter")
 
-    def _copy_content(
-            self, file: TextIOWrapper, fname: str,
-            incl_mode: Literal["parse", "filter", "enums_only", ""] = "",
-            no_header_comment: bool = False
+        return self._file_path
 
-    ) -> None:
-        """Quick writes a file to another file
+    def _copy_content(
+        self, file: TextIOWrapper, fname: str,
+        incl_mode: Literal["parse", "filter", "enums_only", ""] = "",
+        no_header_comment: bool = False
+    ):
+        """
+        Quick writes a file to another file.
+        Also ensures content of the copied file
+        are scanned for class definitions too.
 
         Args:
-            file (TextIOWrapper): File to write to
-            fname (str): Filename to copy from
-            incl_mode (Literal["parse", "filter", ""]):
+            file (TextIOWrapper): Target file to copy content into.
+            fname (str): File to copy content from.
+            incl_mode (Literal["parse", "filter", "enums_only", ""]):
                 Whether to parse includes, filter includes,
-                only keep enum declarations, or do nothing
-
+                only keep enum declarations, or do nothing.
+            no_header_comment (bool):
+                Whether not to comment down the name of the
+                copied file in the target file.
+                Defaults to False.
         """
         # detect if we have already passed an absolute path for the file
-        src_path = Path(fname) if Path(fname).is_absolute() else (self._types_path / fname)
+        src_path = Path(fname) if Path(fname).is_absolute() else (self._types_path / fname).resolve()
 
         with open(src_path) as fr:
             if not no_header_comment:
                 file.write(f"// {fname}\n")
-            file.writelines({
+
+            content = {
                 "filter": self._filter_relative_includes,
                 "parse": self._parse_relative_includes,
                 "enums_only": self._parse_enums_only,
                 "": lambda t: t
-            }[incl_mode](fr.readlines()))
+            }[incl_mode](fr.readlines())
+
+            file.writelines(content)
             file.write("\n\n")
 
+            self._list_class_definitions(content)
+
     def _get_bromaida_platform_macro(self) -> str:
-        """Gets the BromaIDA platform macro name (shocker)"""
+        """Gets the BromaIDA platform macro name."""
         plat_to_macro_suffix: dict[BROMA_PLATFORMS, str] = {
             "win": "WINDOWS",
             "imac": "INTEL_MACOS",
@@ -223,69 +218,71 @@ class BromaCodegen:
         return f"""BROMAIDA_PLATFORM_{
             plat_to_macro_suffix[self._target_platform]
         }"""
-    
-    def _list_class_definitions(self, fname: str) -> set[str]:
-        src_path = self._types_path / fname
-        out: set[str] = set()
 
+    def _list_class_definitions(
+        self,
+        fcontent: list[str]
+    ):
         scopes: list[tuple[str, str, int]] = []
         pending_namespace: str | None = None
         brace_depth = 0
 
         namespace_regex = re.compile(
-            r"^\s*namespace\s+(\w+)\s*$"
+            r"^\s*namespace\s+(\w+)\s*(\{)?"
         )
 
         class_regex = re.compile(
             r"^\s*(class|struct)\s+(\w+)"
         )
 
-        with open(src_path) as f:
-            for line in f:
-                if pending_namespace and line.startswith("{"):
-                    scopes.append(
-                        ("namespace", pending_namespace, brace_depth + 1)
-                    )
-                    pending_namespace = None
+        for line in fcontent:
+            if pending_namespace and line.lstrip().startswith("{"):
+                scopes.append(
+                    ("namespace", pending_namespace, brace_depth + 1)
+                )
+                pending_namespace = None
 
-                if m := namespace_regex.match(line):
+            if m := namespace_regex.match(line):
+                if m.group(2):
+                    scopes.append(
+                        ("namespace", m.group(1), brace_depth + 1)
+                    )
+                else:
                     pending_namespace = m.group(1)
-                    continue
 
-                if m := class_regex.match(line):
-                    kind, name = m.groups()
+                continue
 
-                    inside_class = any(
-                        scope_kind in ("class", "struct")
-                        for scope_kind, _, _ in scopes
+            if m := class_regex.match(line):
+                kind, name = m.groups()
+
+                inside_class = any(
+                    scope_kind in ("class", "struct")
+                    for scope_kind, _, _ in scopes
+                )
+
+                if not inside_class:
+                    namespaces = [
+                        scope_name
+                        for scope_kind, scope_name, _ in scopes
+                        if scope_kind == "namespace"
+                    ]
+
+                    self._defined_classes.add(
+                        "::".join(namespaces + [name])
                     )
 
-                    # only record namespace-level classes
-                    if not inside_class:
-                        namespaces = [
-                            scope_name
-                            for scope_kind, scope_name, _ in scopes
-                            if scope_kind == "namespace"
-                        ]
+                scopes.append(
+                    (kind, name, brace_depth + 1)
+                )
 
-                        out.add(
-                            "::".join(namespaces + [name])
-                        )
+            brace_depth += line.count("{")
+            brace_depth -= line.count("}")
 
-                    scopes.append(
-                        (kind, name, brace_depth + 1)
-                    )
-
-                brace_depth += line.count("{")
-                brace_depth -= line.count("}")
-
-                while (
-                    scopes
-                    and brace_depth < scopes[-1][2]
-                ):
-                    scopes.pop()
-
-        return out
+            while (
+                scopes
+                and brace_depth < scopes[-1][2]
+            ):
+                scopes.pop()
 
     def _filter_relative_includes(self, lines: list[str]) -> list[str]:
         """Comments out relative includes from a list of lines
@@ -303,7 +300,9 @@ class BromaCodegen:
         return lines
 
     def _parse_relative_includes(self, lines: list[str]) -> list[str]:
-        """Parses and includes relative includes from a list of lines
+        """
+        Parses all relative includes inside a list of lines
+        and integrates them back into the lines.
 
         Args:
             lines (list[str])
@@ -322,7 +321,8 @@ class BromaCodegen:
         return lines
     
     def _parse_enums_only(self, lines: list[str]) -> list[str]:
-        """Extract only top-level enum declarations,
+        """
+        Extract only top-level enum declarations,
         ignoring everything inside #if blocks.
         This assumes the input is mostly sane
         to avoid a lot of edge cases.
@@ -331,10 +331,11 @@ class BromaCodegen:
             lines (list[str])
 
         Returns:
-            list[str]"""
+            list[str]
+        """
         out: list[str] = []
 
-        pp_depth = 0
+        macro_depth = 0
         enum_depth = 0
         in_enum = False
 
@@ -343,14 +344,14 @@ class BromaCodegen:
 
             # remove any #if/#ifdef/#ifndef blocks
             if stripped.startswith(("#if", "#ifdef", "#ifndef")):
-                pp_depth += 1
+                macro_depth += 1
                 continue
 
             if stripped.startswith("#endif"):
-                pp_depth -= 1
+                macro_depth -= 1
                 continue
 
-            if pp_depth or stripped.startswith("#"):
+            if macro_depth or stripped.startswith("#"):
                 continue
 
             if not in_enum:

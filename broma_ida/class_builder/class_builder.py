@@ -1,53 +1,79 @@
-from pybroma import Class
+from pybroma import Class, FunctionType
 
+from broma_ida.broma.binding import FunctionSignature
+from broma_ida.broma.class_graph import ClassGraph
 from broma_ida.broma.constants import BROMA_PLATFORMS
 
 
 class ClassBuilder:
-    """Builds a C++ class"""
-    _class_str: str
-    _broma_class: Class
+    """Builds a C++ class string from a Broma Class."""
     _target_platform: BROMA_PLATFORMS
+    _broma_class: Class
+    _class_str: str
+    _graph: ClassGraph
 
-    def _import_class(self) -> None:
-        """Converts a Binding to a class string"""
-        self._class_str = f"class {self._broma_class.name}"
+    # TODO: just make this do the parsing, make lists of members
+    # and methods to be used in get_str for making the class instead
+    def _import_class(self):
+        """
+        Converts a Broma class to a C++ class
+        declaration string for the IDA parser.
+        """
+        bases = ", ".join(
+            f"public {cls}" for cls in self._broma_class.superclasses
+        )
+        inherit = f" : {bases}" if bases else ""
+        # we declare the class inside namespace blocks to
+        # avoid C++ parsing errors, this is done
+        # after the body has finished constructing
+        bare_name = self._broma_class.name.rsplit("::", 1)[-1]
 
-        bases = ", ".join(f"public {cls}" for cls in self._broma_class.superclasses)
-        self._class_str += f" : {bases}" if bases else ""
-        
-        self._class_str += "\n{\npublic:\n"
+        body = f"class {bare_name}{inherit}\n{{\npublic:\n"
 
-        has_left_functions: bool = False
+        has_left_functions = False
+
+        for sig in self._graph.get_own_virtuals(self._broma_class.name):
+            # TODO: wait until pybroma exposes FunctionType for detecting
+            # and skipping constructors and destructors
+
+            # skip any inlined functions on the target platform
+            # they will simply clutter the generated vtables
+            # after parsing and cause shifts in the vtable sizes.
+
+            # if Broma files had reliably defined inline functions
+            # in the class definitions, the field could've been
+            # gotten as an InlineField, which has a C++ string
+            # defining the function fully (InlineField.inner).
+            # regardless, this isn't very useful for type defining.
+            if sig.is_inline:
+                continue
+
+            # skip overriden functions introduced by the secondary superclasses
+            # primary overrides (if not inlined) are still needed for the change
+            # in "this" argument's type for the function call
+            if self._graph.is_secondary_override(
+                self._broma_class, sig
+            ):
+                continue
+
+            body += str(sig)
+            has_left_functions = True
 
         for field in self._broma_class.fields:
-            func_field = field.getAsFunctionBindField()
             member_field = field.getAsMemberField()
             pad_field = field.getAsPadField()
 
-            if func_field is not None and func_field.prototype.is_virtual:
-                function = func_field.prototype
-
-                self._class_str += f"""\tvirtual {
-                    function.ret.name.replace("gd::", "std::")
-                } {function.name}({", ".join([
-                        f"{a.name.replace('gd::', 'std::')} {n}"
-                        for n, a in function.args.items()])
-                    });\n"""
-
-                has_left_functions = True
-
-            elif member_field is not None:
+            if member_field is not None:
                 if has_left_functions:
-                    self._class_str += "\n"
+                    body += "\n"
                     has_left_functions = False
 
-                # currently, only members use the geode namespace
-                self._class_str += f"""\t{
-                    member_field.type.name.replace(
-                        "gd::", "std::"
-                    ).replace("geode::", "")
-                } {member_field.name};\n"""
+                body += f"\t{
+                    member_field.type.name
+                        .replace('gd::', 'std::')
+                        .replace('geode::', '')
+                } {member_field.name};\n"
+
             elif pad_field is not None:
                 # skip other members because no padding for current platform
                 if self._target_platform not in \
@@ -63,23 +89,35 @@ class ClassBuilder:
                     continue
 
                 if has_left_functions:
-                    self._class_str += "\n"
+                    body += "\n"
                     has_left_functions = False
 
-                self._class_str += f"""\tPAD({pad_amount});\n"""
+                body += f"\tPAD({pad_amount});\n"
 
-        self._class_str += "};\n\n"
+        body += "};\n"
+
+        if "::" in self._broma_class.name:
+            parts = self._broma_class.name.split("::")
+            open_ns = " ".join(
+                f"namespace {ns} {{" for ns in parts[:-1]
+            )
+            close_ns = " }" * (len(parts) - 1)
+            self._class_str = f"{open_ns}\n{body}{close_ns}\n\n"
+        else:
+            self._class_str = body + "\n"
 
     def __init__(
         self,
         platform: BROMA_PLATFORMS,
-        broma_class: Class
+        broma_class: Class,
+        graph: ClassGraph
     ):
         self._target_platform = platform
         self._broma_class = broma_class
         self._class_str = ""
-
+        self._graph = graph
+        
         self._import_class()
 
-    def get_str(self):
+    def get_str(self) -> str:
         return self._class_str
