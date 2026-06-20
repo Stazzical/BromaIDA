@@ -1,6 +1,5 @@
-from pybroma import Class, FunctionType
+from pybroma import Class
 
-from broma_ida.broma.binding import FunctionSignature
 from broma_ida.broma.class_graph import ClassGraph
 from broma_ida.broma.constants import BROMA_PLATFORMS
 
