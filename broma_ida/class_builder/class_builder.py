@@ -55,7 +55,7 @@ class ClassBuilder:
             ):
                 continue
 
-            body += str(sig)
+            body += f"\t{str(sig)}\n"
             has_left_functions = True
 
         for field in self._broma_class.fields:
@@ -100,7 +100,7 @@ class ClassBuilder:
             open_ns = " ".join(
                 f"namespace {ns} {{" for ns in parts[:-1]
             )
-            close_ns = " }" * (len(parts) - 1)
+            close_ns = (" }" * (len(parts) - 1))[1:]
             self._class_str = f"{open_ns}\n{body}{close_ns}\n\n"
         else:
             self._class_str = body + "\n"
@@ -120,3 +120,38 @@ class ClassBuilder:
 
     def get_str(self) -> str:
         return self._class_str
+
+class STLClassBuilder:
+    stl_types: tuple[list[str], list[str]]
+
+    def __init__(
+        self,
+        stl_types: tuple[list[str], list[str]]
+    ) -> None:
+        self.stl_types = stl_types
+
+    def emit_ptr_types(self) -> str:
+        if len(self.stl_types[0]) == 0:
+            return ""
+
+        body = "class __BromaSTLTypesPtr {\n"
+
+        for member in self.stl_types[0]:
+            body += f"\t{member}\n"
+
+        body += "};\n"
+
+        return body
+
+    def emit_value_types(self) -> str:
+        if len(self.stl_types[1]) == 0:
+            return ""
+
+        body = "class __BromaSTLTypesValue {\n"
+
+        for member in self.stl_types[1]:
+            body += f"\t{member};\n"
+
+        body += "};\n"
+
+        return body

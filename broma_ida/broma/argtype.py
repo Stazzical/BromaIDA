@@ -1,6 +1,6 @@
 from typing import cast, Final, Union
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from re import sub
 
@@ -30,6 +30,11 @@ class STLUtils:
 
     has_two_templates = lambda s: "{1}" in s  # noqa" E731
     """True if the STL type takes 2 templates."""
+
+    format_ptr = lambda pt: sub(  # noqa: E731
+        r"([^ ])\*", r"\1 *", pt
+    )
+    """IDA is east pointer (ew)"""
 
     strip_crp = lambda tt: (  # noqa: E731
         cast(str, tt)
@@ -202,27 +207,6 @@ class STLUtils:
         return flatten_and_expand(STLUtils.split_stl_type(stl_t))
 
     @staticmethod
-    def extract_bare_types(raw: str) -> set[str]:
-        """
-        Cycle through all bare type names from a type string.
-
-        Args:
-            raw (str)
-
-        Returns:
-            set[str]
-        """
-        if "std::" in raw:
-            return {
-                bare
-                for bare, _ in STLUtils.stl_value_types(raw)
-                if bare
-            }
-
-        bare = STLUtils.strip_crp(raw).strip()
-        return {bare} if bare else set()
-
-    @staticmethod
     def stl_value_types(
         raw: str
     ) -> list[tuple[str, bool]]:
@@ -234,7 +218,7 @@ class STLUtils:
         results: list[tuple[str, bool]] = []
 
         def walk(node, parent_by_value: bool = True):
-            # STLTree list
+            # STL_Tree list
             if isinstance(node, list):
                 ptr_slot = node[-1] if isinstance(node[-1], str) else ""
                 by_value = "*" not in ptr_slot and "&" not in ptr_slot
@@ -268,40 +252,51 @@ class STLUtils:
 @dataclass
 class ArgType:
     """A function argument type."""
-
     type: str
     name: str = ""
     reg: str = ""
 
+    expanded_type: str = field(init=False)
+
     def __post_init__(self):
-        STLUtils.normalize_type(self.type)
+        self.type = STLUtils.normalize_type(self.type)
 
         if "std::" in self.type:
-            self.type = STLUtils.expand_stl_type(self.type)
+            self.expanded_type = STLUtils.format_ptr(
+                STLUtils.expand_stl_type(self.type)
+            )
+        else:
+            self.expanded_type = self.type
 
     @property
     def stripped_type(self) -> str:
-        """Type stripped from const, reference and pointer.
+        """
+        Type stripped from const, reference and pointer.
 
         Returns:
             str
         """
         return STLUtils.strip_crp(self.type)
 
+    @property
+    def stripped_expanded_type(self) -> str:
+        return STLUtils.strip_crp(self.expanded_type)
+
     def __str__(self) -> str:
-        if self.name == "":
+        if not self.name:
             return self.type
 
-        return (
-            f"{self.type} {self.name}"
-            f"@<{self.reg}>" if self.reg else ""
-        )
+        result = f"{self.type} {self.name}"
+
+        if self.reg:
+            result += f"@<{self.reg}>"
+
+        return result
 
     def __eq__(self, other):
         if isinstance(other, str):
-            return self.type == other
-
-        if isinstance(other, ArgType) or isinstance(other, RetType):
+            return self.type == STLUtils.normalize_type(other)
+        elif isinstance(other, ArgType) or isinstance(other, RetType):
             return self.type == other.type
 
         return NotImplemented
@@ -312,12 +307,3 @@ class ArgType:
 
 class RetType(ArgType):
     """A function return type."""
-
-    def __post_init__(self):
-        if self.type == "":
-            self.type = "void"
-        else:
-            STLUtils.normalize_type(self.type)
-
-            if "std::" in self.type:
-                self.type = STLUtils.expand_stl_type(self.type)

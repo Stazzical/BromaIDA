@@ -35,6 +35,7 @@ from hashlib import file_digest
 
 from pybroma import Root, Class
 
+from broma_ida.broma.argtype import ArgType, RetType, STLUtils
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.codegen import BromaCodegen
@@ -71,15 +72,6 @@ class BIUtils:
         "ios": "-target arm64-apple-darwin",
         "android32":  "-target armv7-none-linux-androideabi -mfloat-abi=hard",
         "android64": "-target aarch64-none-linux-android -mfloat-abi=hard"
-    }
-
-    _plat_to_hss_size: dict[BROMA_PLATFORMS, int] = {
-        "win": 0x8E0,
-        "imac": 0x750,
-        "m1": 0x750,
-        "ios": 0x750,
-        "android32": 0x504,
-        "android64": 0xA08
     }
 
     _plat_to_stl_name: dict[BROMA_PLATFORMS, str] = {
@@ -124,7 +116,7 @@ class BIUtils:
         return None
 
     @staticmethod
-    def verify_type(t: ida_tinfo_t | None) -> bool:
+    def is_invalid_type(t: ida_tinfo_t | None) -> bool:
         """
         Verifies an `ida_tinfo_t`.
 
@@ -141,9 +133,22 @@ class BIUtils:
             return True
 
         return False
+    
+    @staticmethod
+    def verify_stl_structs() -> bool:
+        ptr = BIUtils.get_type_info("__BromaSTLTypesPtr")
+        value = BIUtils.get_type_info("__BromaSTLTypesValue")
+
+        if ptr is None or value is None:
+            return False
+
+        if ptr.is_forward_decl() or value.is_forward_decl():
+            return False
+
+        return True
 
     @staticmethod
-    def verify_types(platform: BROMA_PLATFORMS) -> bool:
+    def verify_types() -> bool:
         """
         Verifies the existence and size of types.
 
@@ -153,23 +158,19 @@ class BIUtils:
         if DataManager().get("ignore_mismatched_structs"):
             return True
 
-        holy_shit_struct = BIUtils.get_type_info("holy_shit")
-
-        if holy_shit_struct:
-            if holy_shit_struct.get_size() != \
-                    BIUtils.get_holy_shit_struct_size(platform):
-                ida_warning(
-                    "Mismatch in STL types! "
-                    "Classes will not be imported!\n"
-                    "To fix this, go to the local types window, "
-                    "delete BromaIDA folder "
-                    "(you might have to right-click > Show folders)\n"
-                    "then save the IDB."
-                )
-                return False
+        if not BIUtils.verify_stl_structs():
+            ida_warning(
+                "Mismatch in STL types! "
+                "Classes will not be imported!\n"
+                "To fix this, go to the local types subview, "
+                "delete the \"BromaIDA\" dirtree, "
+                "then save the IDB.\n"
+                "(you might have to right-click > Show folders)"
+            )
+            return False
 
         if any((
-            BIUtils.verify_type(BIUtils.get_type_info(t))
+            BIUtils.is_invalid_type(BIUtils.get_type_info(t))
             for t in (
                 "cocos2d::CCObject", "cocos2d::CCNode", "cocos2d::CCImage",
                 "cocos2d::CCApplication", "cocos2d::CCDirector"
@@ -178,27 +179,14 @@ class BIUtils:
             ida_warning(
                 "Mismatch in Cocos2d types! "
                 "Classes will not be imported!\n"
-                "To fix this, go to the local types window, "
-                "delete BromaIDA folder "
-                "(you might have to right-click -> Show folders)\n"
-                "and then save the IDB."
+                "To fix this, go to the Local Types subview, "
+                "delete the \"BromaIDA\" dirtree, "
+                "then save the IDB.\n"
+                "(you might have to right-click > Show folders)"
             )
             return False
 
         return True
-
-    @staticmethod
-    def get_holy_shit_struct_size(platform: BROMA_PLATFORMS) -> int:
-        """
-        Gets the size of the STL struct for the supplied platform.
-
-        Args:
-            platform (BROMA_PLATFORMS)
-
-        Returns:
-            int: size in bytes
-        """
-        return BIUtils._plat_to_hss_size[platform]
 
     @staticmethod
     def get_parser_argv(platform: BROMA_PLATFORMS) -> str:
@@ -327,11 +315,11 @@ class BIUtils:
 
         for i, arg in enumerate(function):
             if i == 0 and not binding.is_static:
-                if arg != f"""{binding.class_name}*""":
+                if str(arg) != f"""{binding.class_name}*""":
                     return True
-            elif arg != binding.parameters[
+            elif STLUtils.normalize_type(str(arg)) != binding.parameters[
                 i - (0 if binding.is_static else 1)
-            ].type:
+            ].expanded_type:
                 return True
 
         return False
@@ -358,10 +346,10 @@ class BIUtils:
             for i in range(len(binding_fix.parameters)):
                 if "std::" in binding_fix.parameters[i].type:
                     arg_stl_idx.append(i)
-                    binding_fix.parameters[i].name = "void*"
+                    binding_fix.parameters[i] = ArgType("void*", binding_fix.parameters[i].name)
 
         if binding.has_stl_ret:
-            binding_fix.ret.name = "void*"
+            binding_fix.ret = RetType("void*", binding_fix.ret.name)
 
         # first set correct amount of arguments
         SetType(ea, binding_fix.signature)
@@ -369,9 +357,10 @@ class BIUtils:
         function_data = IDAUtils.get_function_info(ea, True)
 
         if function_data is None:
-            ida_warning(
-                "Couldn't fix STL parameters for "
-                f"function {binding.qualified_name}!\n"
+            print(
+                "[!] BromaImporter: Couldn't fix "
+                "STL parameters for "
+                f"function {binding.qualified_name}! "
                 "(function is null)"
             )
             return
@@ -381,27 +370,28 @@ class BIUtils:
             stl_type = ida_tinfo_t()
             stl_type.get_named_type(
                 get_idati(),
-                binding.parameters[idx].stripped_type,
+                binding.parameters[idx].stripped_expanded_type,
                 BTF_TYPEDEF,
                 False
             )
 
             if stl_type.get_ordinal() == 0:
-                ida_warning(
-                    f"STL Type '{stl_type.get_type_name()}' "
-                    "isn't present in the type library!\n"
+                print(
+                    f"[!] BromaImporter: STL Type "
+                    f"'{stl_type.get_type_name()}' "
+                    "isn't present in the type library! "
                     "Please open a GitHub issue."
                 )
                 return
 
-            if binding.parameters[idx].name.endswith("&") or \
-                    binding.parameters[idx].name.endswith("*"):
+            if binding.parameters[idx].type.endswith("&") or \
+                    binding.parameters[idx].type.endswith("*"):
                 stl_type_ptr = ida_tinfo_t()
                 stl_type_ptr.create_ptr(stl_type)
 
                 stl_type = stl_type_ptr
 
-            if "const" in binding.parameters[idx].name:
+            if "const" in binding.parameters[idx].type:
                 stl_type.set_const()
 
             try:
@@ -409,9 +399,10 @@ class BIUtils:
                     idx + (0 if binding.is_static else 1)
                 ].type = stl_type
             except IndexError:
-                ida_warning(
-                    "Couldn't fix STL parameters for "
-                    f"function {binding.qualified_name}!\n"
+                print(
+                    "[!] BromaImporter: Couldn't fix "
+                    "STL parameters for "
+                    f"function {binding.qualified_name}! "
                     "(parameter index out of range)"
                 )
                 return
@@ -420,13 +411,13 @@ class BIUtils:
             stl_type = ida_tinfo_t()
             stl_type.get_named_type(
                 get_idati(),
-                binding.ret.stripped_type,
+                binding.ret.stripped_expanded_type,
                 BTF_TYPEDEF,
                 False
             )
 
-            if binding.ret.name.endswith("&") or \
-                    binding.ret.name.endswith("*"):
+            if binding.ret.type.endswith("&") or \
+                    binding.ret.type.endswith("*"):
                 stl_type_ptr = ida_tinfo_t()
                 stl_type_ptr.create_ptr(stl_type)
 
@@ -541,9 +532,7 @@ class BromaImporter:
                 self.classes[cls.name] = cls
 
     def _load_broma_bindings(self):
-        """
-        Gather all the needed bindings from the Broma files.
-        """
+        """Gather all the needed bindings from the Broma files."""
         # finding duplicate binds on Android is mostly impossible
         # due to the compiler not inlining functions
         if self._target_platform.startswith("android"):
@@ -568,10 +557,10 @@ class BromaImporter:
                     if function_field is None:
                         continue
 
-                    func_addr = int(
-                        function_field.binds.platforms_as_dict().get(
-                            self._target_platform, "-0x1"
-                        ), 16
+                    func_addr = getattr(
+                        function_field.binds,
+                        self._target_platform,
+                        -1
                     )
 
                     if func_addr == -1:
@@ -681,7 +670,7 @@ class BromaImporter:
 
         if not HAS_IDACLANG and import_types:
             ida_warning(
-                "Trying to import types without IDAClang! "
+                "Trying to import types without IDAClang!\n"
                 "Disabling importing of types..."
             )
             DataManager().set("import_types", False)
@@ -725,7 +714,7 @@ class BromaImporter:
                 BIUtils.get_stl_headers_path(self._target_platform)
             )
 
-            if BIUtils.verify_types(self._target_platform):
+            if BIUtils.verify_types():
                 types_file = self._codegen_classes()
                 srclang_parser = IDAUtils.get_srclang_parser()
                 select_srclang_parser_by_name(srclang_parser)
@@ -755,7 +744,9 @@ class BromaImporter:
                         True
                     )
 
-                self._has_types = True
+                BIUtils.get_type_info("", True)
+
+                self._has_types = BIUtils.verify_types()
             else:
                 self._has_types = len(IDAUtils.get_dirtree_entries(
                     DIRTREE_LOCAL_TYPES, "/BromaIDA"
@@ -944,6 +935,7 @@ class BromaImporter:
         self._target_platform = ""  # type: ignore
         self._bromas_path = Path()
         self._broma_files.clear()
+        self._has_types = False
 
         self.bindings.clear()
         self.classes.clear()
