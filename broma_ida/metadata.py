@@ -1,4 +1,4 @@
-SCRIPT_VERSION = "7.3.1"
+SCRIPT_VERSION = "8.0.0"
 BROMAIDA_GITHUB = "https://github.com/Stazzical/BromaIDA"
 __AUTHOR__ = "SpaghettDev"
 
