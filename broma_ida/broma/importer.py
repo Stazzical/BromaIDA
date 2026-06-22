@@ -15,8 +15,7 @@ from ida_kernwin import warning as ida_warning, ASKBTN_BTN1
 try:
     from ida_typeinf import get_ordinal_qty
 except ImportError:
-    from ida_typeinf import get_ordinal_count  # type: ignore
-    get_ordinal_qty = get_ordinal_count
+    from ida_typeinf import get_ordinal_count as get_ordinal_qty
 from ida_typeinf import (
     get_idati, set_c_header_path,
     func_type_data_t as ida_func_type_data_t,
@@ -28,6 +27,7 @@ from ida_dirtree import (
     direntry_t as ida_direntry_t,
     DIRTREE_LOCAL_TYPES
 )
+from ida_nalt import get_root_filename
 
 from re import sub
 from pathlib import Path
@@ -35,6 +35,7 @@ from hashlib import file_digest
 
 from pybroma import Root, Class
 
+from broma_ida.broma.argtype import ArgType, RetType, STLUtils
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.codegen import BromaCodegen
@@ -73,15 +74,6 @@ class BIUtils:
         "android64": "-target aarch64-none-linux-android -mfloat-abi=hard"
     }
 
-    _plat_to_hss_size: dict[BROMA_PLATFORMS, int] = {
-        "win": 0x8E0,
-        "imac": 0x750,
-        "m1": 0x750,
-        "ios": 0x750,
-        "android32": 0x504,
-        "android64": 0xA08
-    }
-
     _plat_to_stl_name: dict[BROMA_PLATFORMS, str] = {
         "win": "windows",
         "android32": "android",
@@ -96,7 +88,8 @@ class BIUtils:
         name: str,
         update: bool = False
     ) -> ida_tinfo_t | None:
-        """Gets the info about a type/struct
+        """
+        Gets the info about a type/struct
 
         Args:
             name (str): The name of the type/struct
@@ -123,8 +116,9 @@ class BIUtils:
         return None
 
     @staticmethod
-    def verify_type(t: ida_tinfo_t | None) -> bool:
-        """Verifies an ida tinfo_t
+    def is_invalid_type(t: ida_tinfo_t | None) -> bool:
+        """
+        Verifies an `ida_tinfo_t`.
 
         Args:
             t (ida_tinfo_t | None):
@@ -139,10 +133,24 @@ class BIUtils:
             return True
 
         return False
+    
+    @staticmethod
+    def verify_stl_structs() -> bool:
+        ptr = BIUtils.get_type_info("__BromaSTLTypesPtr")
+        value = BIUtils.get_type_info("__BromaSTLTypesValue")
+
+        if ptr is None or value is None:
+            return False
+
+        if ptr.is_forward_decl() or value.is_forward_decl():
+            return False
+
+        return True
 
     @staticmethod
-    def verify_types(platform: BROMA_PLATFORMS) -> bool:
-        """Verifies the existance and size of types
+    def verify_types() -> bool:
+        """
+        Verifies the existence and size of types.
 
         Returns:
             bool: True on success
@@ -150,55 +158,40 @@ class BIUtils:
         if DataManager().get("ignore_mismatched_structs"):
             return True
 
-        holy_shit_struct = BIUtils.get_type_info("holy_shit")
-
-        if holy_shit_struct:
-            if holy_shit_struct.get_size() != \
-                    BIUtils.get_holy_shit_struct_size(platform):
-                ida_warning(
-                    "Mismatch in STL types! "
-                    "Classes will not be imported!\n"
-                    "To fix this, go to the local types window, "
-                    "delete BromaIDA folder "
-                    "(you might have to right-click > Show folders)\n"
-                    "then save the IDB."
-                )
-                return False
+        if not BIUtils.verify_stl_structs():
+            ida_warning(
+                "Mismatch in STL types! "
+                "Classes will not be imported!\n"
+                "To fix this, go to the local types subview, "
+                "delete the \"BromaIDA\" dirtree, "
+                "then save the IDB.\n"
+                "(you might have to right-click > Show folders)"
+            )
+            return False
 
         if any((
-            BIUtils.verify_type(BIUtils.get_type_info(t))
+            BIUtils.is_invalid_type(BIUtils.get_type_info(t))
             for t in (
                 "cocos2d::CCObject", "cocos2d::CCNode", "cocos2d::CCImage",
                 "cocos2d::CCApplication", "cocos2d::CCDirector"
             )
         )):
             ida_warning(
-                "Mismatch in cocos2d types! "
+                "Mismatch in Cocos2d types! "
                 "Classes will not be imported!\n"
-                "To fix this, go to the local types window, "
-                "delete BromaIDA folder "
-                "(you might have to right-click > Show folders)\n"
-                "then save the IDB."
+                "To fix this, go to the Local Types subview, "
+                "delete the \"BromaIDA\" dirtree, "
+                "then save the IDB.\n"
+                "(you might have to right-click > Show folders)"
             )
             return False
 
         return True
 
     @staticmethod
-    def get_holy_shit_struct_size(platform: BROMA_PLATFORMS) -> int:
-        """Gets the size of the STL struct for the supplied platform
-
-        Args:
-            platform (BROMA_PLATFORMS)
-
-        Returns:
-            int: size in bytes
-        """
-        return BIUtils._plat_to_hss_size[platform]
-
-    @staticmethod
     def get_parser_argv(platform: BROMA_PLATFORMS) -> str:
-        """Gets the parser arguments for a certain platform
+        """
+        Gets the parser arguments for a certain platform.
 
         Args:
             platform (BROMA_PLATFORMS)
@@ -212,7 +205,8 @@ class BIUtils:
 
     @staticmethod
     def get_stl_headers_path(platform: BROMA_PLATFORMS) -> str:
-        """Gets the STL headers path for a given platform
+        """
+        Gets the STL headers path for a given platform.
 
         Args:
             platform (BROMA_PLATFORMS)
@@ -228,7 +222,8 @@ class BIUtils:
 
     @staticmethod
     def prompt_invalid_dir(input_str: str, dm_key: str):
-        """Shows a warning and prompts the user to input a valid directory.
+        """
+        Shows a warning and prompts the user to input a valid directory.
         Saves the directory to the DataManager
 
         Args:
@@ -252,7 +247,7 @@ class BIUtils:
 
     @staticmethod
     def move_type_entries_to_bromaida() -> None:
-        """Moves imported type entries to /BromaIDA in the local types tree"""
+        """Moves imported type entries to /BromaIDA in the local types tree."""
         dirtree = get_std_dirtree(DIRTREE_LOCAL_TYPES)
         entries = IDAUtils.get_dirtree_entries(
             DIRTREE_LOCAL_TYPES, "/"
@@ -274,11 +269,12 @@ class BIUtils:
 
     @staticmethod
     def dirtree_is_bromaida_entry(de: ida_direntry_t, ep: str) -> bool:
-        """Predicate to check if a dirtree entry is in /BromaIDA
+        """
+        Predicate to check if a dirtree entry is in /BromaIDA
 
         Args:
-            de (ida_direntry_t):
-            ep (str):
+            de (ida_direntry_t)
+            ep (str)
 
         Returns:
             bool
@@ -287,11 +283,12 @@ class BIUtils:
 
     @staticmethod
     def delete_dirtree_entry(de: ida_direntry_t, ep: str) -> bool:
-        """Deletes a dirtree entry
+        """
+        Deletes a dirtree entry.
 
         Args:
-            de (ida_direntry_t):
-            ep (str):
+            de (ida_direntry_t)
+            ep (str)
         """
         return get_std_dirtree(DIRTREE_LOCAL_TYPES).unlink(ep) == 0x0
 
@@ -299,7 +296,8 @@ class BIUtils:
 
     @staticmethod
     def has_mismatch(function: ida_func_type_data_t, binding: Binding) -> bool:
-        """Checks if there is a mismatch between the idb and a binding.
+        """
+        Checks if there is a mismatch between the IDB and a binding.
 
         Args:
             function (func_type_data_t):
@@ -317,56 +315,41 @@ class BIUtils:
 
         for i, arg in enumerate(function):
             if i == 0 and not binding.is_static:
-                if str(arg.type) != f"""{binding.class_name} *""":
+                if str(arg) != f"""{binding.class_name}*""":
                     return True
-            elif str(arg).replace(" *", "*") != binding.parameters[
+            elif STLUtils.normalize_type(str(arg)) != binding.parameters[
                 i - (0 if binding.is_static else 1)
-            ].type:
+            ].expanded_type:
                 return True
 
         return False
 
     @staticmethod
     def set_function_signature(ea: int, binding: Binding):
-        """Set's the function at `ea`'s signature. Has custom logic for
+        """
+        Sets the function at `ea`'s signature. Has custom logic for
         functions that use STL types since those break when using SetType
-        because of the commas in the template arguments
+        due to the use of commas in the function argument types.
 
         Args:
-            ea (int):
-            binding (Binding):
+            ea (int)
+            binding (Binding)
         """
-        args_has_stl_type = False
-        ret_has_stl_type = False
-
-        # we don't have an issue with std::string, only with generic stl types
-        if "std::" in binding.ret.type and \
-                binding.ret.stripped_type != "std::string":
-            ret_has_stl_type = True
-
-        for parameter in binding.parameters:
-            if parameter.stripped_type == "std::string":
-                continue
-
-            if "std::" in parameter.type:
-                args_has_stl_type = True
-                break
-
-        if not args_has_stl_type and not ret_has_stl_type:
+        if not binding.needs_stl_fixup:
             SetType(ea, binding.signature)
             return
 
         binding_fix = deepcopy(binding)
         arg_stl_idx: list[int] = []
 
-        if args_has_stl_type:
+        if binding.has_stl_args:
             for i in range(len(binding_fix.parameters)):
                 if "std::" in binding_fix.parameters[i].type:
                     arg_stl_idx.append(i)
-                    binding_fix.parameters[i].type = "void*"
+                    binding_fix.parameters[i] = ArgType("void*", binding_fix.parameters[i].name)
 
-        if ret_has_stl_type:
-            binding_fix.ret.type = "void*"
+        if binding.has_stl_ret:
+            binding_fix.ret = RetType("void*", binding_fix.ret.name)
 
         # first set correct amount of arguments
         SetType(ea, binding_fix.signature)
@@ -374,9 +357,10 @@ class BIUtils:
         function_data = IDAUtils.get_function_info(ea, True)
 
         if function_data is None:
-            ida_warning(
-                "Couldn't fix STL parameters for "
-                f"function {binding.qualified_name}!\n"
+            print(
+                "[!] BromaImporter: Couldn't fix "
+                "STL parameters for "
+                f"function {binding.qualified_name}! "
                 "(function is null)"
             )
             return
@@ -386,15 +370,16 @@ class BIUtils:
             stl_type = ida_tinfo_t()
             stl_type.get_named_type(
                 get_idati(),
-                binding.parameters[idx].stripped_type,
+                binding.parameters[idx].stripped_expanded_type,
                 BTF_TYPEDEF,
                 False
             )
 
             if stl_type.get_ordinal() == 0:
-                ida_warning(
-                    f"STL Type '{stl_type.get_type_name()}' "
-                    "isn't present in the type library!\n"
+                print(
+                    f"[!] BromaImporter: STL Type "
+                    f"'{stl_type.get_type_name()}' "
+                    "isn't present in the type library! "
                     "Please open a GitHub issue."
                 )
                 return
@@ -414,18 +399,19 @@ class BIUtils:
                     idx + (0 if binding.is_static else 1)
                 ].type = stl_type
             except IndexError:
-                ida_warning(
-                    "Couldn't fix STL parameters for "
-                    f"function {binding.qualified_name}!\n"
+                print(
+                    "[!] BromaImporter: Couldn't fix "
+                    "STL parameters for "
+                    f"function {binding.qualified_name}! "
                     "(parameter index out of range)"
                 )
                 return
 
-        if ret_has_stl_type:
+        if binding.has_stl_ret:
             stl_type = ida_tinfo_t()
             stl_type.get_named_type(
                 get_idati(),
-                binding.ret.stripped_type,
+                binding.ret.stripped_expanded_type,
                 BTF_TYPEDEF,
                 False
             )
@@ -451,33 +437,179 @@ class BromaImporter:
     """Broma importer of all time using PyBroma now!"""
 
     _target_platform: BROMA_PLATFORMS
-    _file_path: str
+    _bromas_path: Path
     _has_types: bool = False
     _imported_types: list[DirtreeEntry] = []
+    _broma_files: dict[str, Root] = {}
 
     bindings: deque[Binding] = deque()
+    classes: dict[str, Class] = {}
     duplicates: dict[int, list[Binding]] = {}
 
-    def _codegen_classes(self, classes: dict[str, Class]) -> bool:
-        """Codegens the file that contains the parsed broma classes
+    def _win_is_cocos_class(self, class_name: str) -> bool:
+        """
+        Distinguishes between the classes present inside the current IDB on Windows
+        based on knowing if it's 'libcocos2d.dll' or 'GeometryDash.exe'.
+        `cocos2d::CCLightning` is an exception due to being a RobTop custom class.
 
         Args:
-            classes (dict[str, Class])
+            class_name: str
 
         Returns:
             bool
         """
-        if not HAS_IDACLANG:
-            return False
+        # it's safest to not assume cocos than check if it's an .exe
+        is_dll = get_root_filename().lower().startswith("libcocos2d")
+        is_cocos = (
+            class_name.startswith("cocos2d")
+            or class_name.startswith("pugi")
+        )
+        # custom RobTop class
+        is_exception = (class_name == "cocos2d::CCLightning")
 
-        BromaCodegen(
+        # libcocos2d.dll
+        if is_dll:
+            return (not is_cocos) or is_exception
+
+        # GeometryDash.exe
+        return is_cocos and not is_exception
+
+    def _codegen_classes(self) -> Path:
+        """
+        Codegens the file that contains the parsed Broma classes.
+
+        Returns:
+            Path
+        """
+        return BromaCodegen(
             self._target_platform,
-            classes,
+            self.classes,
             IDAUtils.get_ida_path("plugins") / "broma_ida" / "types",
-            Path("/".join(Path(self._file_path).parts[:-1]))
+            self._bromas_path
         ).write()
 
-        return True
+    def _preload_broma_files(self):
+        """
+        Pre-loads all the Broma files needed for importing
+        Geometry Dash's classes and bindings, relative to
+        the current binary's target platform.
+        """
+        bfiles = [
+            "Cocos2d.bro",
+            "GeometryDash.bro",
+            "Extras.bro"
+        ]
+
+        if self._target_platform == "ios":
+            bfiles.append("FMOD.bro")
+
+        if self._target_platform in ("m1", "imac", "ios"):
+            bfiles.append("Kazmath.bro")
+
+        for bfile in bfiles:
+            bro_path = self._bromas_path / bfile
+            if not bro_path.exists():
+                # TODO: think if we could make use of prompt_invalid_dir from BIUtils
+                # to receive a new directory if import fails.
+                ida_warning(
+                    f"Broma file '{bfile}' not found during import! "
+                    "Aborting..."
+                )
+                stop()
+
+            self._broma_files[bfile] = Root(str(bro_path))
+
+    def _load_broma_classes(self):
+        for bfile, root in self._broma_files.items():
+            for cls in root.classes:
+                if cls.name in self.classes:
+                    print(
+                        "[!] BromaImporter: Duplicate class definition! "
+                        f"({cls.name} from {bfile}) "
+                        "Overwriting..."
+                    )
+                    
+                self.classes[cls.name] = cls
+
+    def _load_broma_bindings(self):
+        """Gather all the needed bindings from the Broma files."""
+        # finding duplicate binds on Android is mostly impossible
+        # due to the compiler not inlining functions
+        if self._target_platform.startswith("android"):
+            for class_name, broma_class in self.classes.items():
+                for field in broma_class.fields:
+                    function_field = field.getAsFunctionBindField()
+
+                    if function_field is None:
+                        continue
+
+                    self.bindings.append(
+                        Binding.from_field(class_name, function_field)
+                    )
+        else:
+            for class_name, broma_class in self.classes.items():
+                if self._target_platform == "win" and self._win_is_cocos_class(class_name):
+                    continue
+
+                for field in broma_class.fields:
+                    function_field = field.getAsFunctionBindField()
+
+                    if function_field is None:
+                        continue
+
+                    func_addr = getattr(
+                        function_field.binds,
+                        self._target_platform,
+                        -1
+                    )
+
+                    # -2 is explicitly inlined, -1 is missing
+                    if func_addr == -1 or func_addr == -2:
+                        continue
+
+                    function = function_field.prototype
+
+                    # Runs only for the first time an address has a duplicate
+                    if func_addr in self.bindings:
+                        dup_binding = self.bindings[
+                            self.bindings.index(func_addr) # type: ignore
+                        ]
+                        error_location = \
+                            f"{class_name}::{function.name} " \
+                            f"and {dup_binding.short_info}"
+
+                        if f"{class_name}::{function.name}" == \
+                                dup_binding.qualified_name:
+                            print(
+                                "[!] BromaImporter: Duplicate binding with "
+                                f"same qualified name! ({error_location})"
+                            )
+                            continue
+                        elif class_name == dup_binding.class_name:
+                            print(
+                                "[!] BromaImporter: Duplicate binding within "
+                                f"same class! ({error_location})"
+                            )
+                            continue
+
+                        print(
+                            "[!] BromaImporter: Duplicate binding! "
+                            f"({class_name}::{function.name} "
+                            f"and {dup_binding.short_info})"
+                        )
+                        self.bindings.remove(dup_binding)
+                        self.duplicates[func_addr] = []
+                        self.duplicates[func_addr].append(dup_binding)
+
+                    if func_addr in self.duplicates:
+                        self.duplicates[func_addr].append(
+                            Binding.from_field(class_name, function_field)
+                        )
+                        continue
+
+                    self.bindings.append(
+                        Binding.from_field(class_name, function_field)
+                    )
 
     def _pre_import_types(self):
         """Pre-import types hook"""
@@ -517,7 +649,7 @@ class BromaImporter:
             DIRTREE_LOCAL_TYPES, "/BromaIDA", self._imported_types
         )
 
-    def __init__(self, platform: BROMA_PLATFORMS, filepath: str):
+    def __init__(self, platform: BROMA_PLATFORMS, filepath: Path):
         """Initializes a BromaImporter instance
 
         Args:
@@ -526,54 +658,65 @@ class BromaImporter:
         """
         self._reset()
         self._target_platform = platform
-        self._file_path = filepath
+        self._bromas_path = filepath
 
-    def parse_file(self):
+    def parse_bromas(self):
         """
-        Parses the broma file passed into the constructor
-        and imports the members and methods
+        Parses the Broma files as classes and bindings,
+        then also imports the methods and members through
+        Codegen if importing types is enabled in settings.
         """
-        root = Root(self._file_path)
         import_types: bool = DataManager().get("import_types")
+        self._preload_broma_files()
 
         if not HAS_IDACLANG and import_types:
             ida_warning(
-                "Trying to import types without IDAClang! "
+                "Trying to import types without IDAClang!\n"
                 "Disabling importing of types..."
             )
             DataManager().set("import_types", False)
             import_types = False
 
-        if import_types and not DataManager().get("disable_broma_hash_check"):
-            cur_hash: str
-            with open(self._file_path, "rb", buffering=0) as f:
-                cur_hash = file_digest(f, "sha256").hexdigest()  # type: ignore
+        self._load_broma_classes()
 
-            last_broma_info = DataManager().get(
-                "last_broma_info", (self._target_platform, "")
-            )
+        # Hash check for bindings
+        if import_types:
+            if not DataManager().get("disable_broma_hash_check"):
+                cur_hash: str = ""
+                for bfile in self._broma_files.keys():
+                    with open(self._bromas_path / bfile, "rb", buffering = 0) as f:
+                        cur_hash += file_digest(f, "sha256").hexdigest() + ","
 
-            if last_broma_info[0] == self._target_platform and \
-                    last_broma_info[1] != "":
-                if last_broma_info[1] == cur_hash:
-                    print(
-                        "[!] BromaImporter: Detected same Broma hash. "
-                        "Will not import types..."
-                    )
-                    import_types = False
-            elif last_broma_info[1] == "":
-                DataManager().set(
-                    "last_broma_info", (self._target_platform, cur_hash)
+                cur_hash = cur_hash[:-1]
+
+                last_broma_info = DataManager().get(
+                    "last_broma_info", (self._target_platform, "")
                 )
 
-        if import_types:
+                if last_broma_info[0] == self._target_platform and \
+                        last_broma_info[1] != "":
+                    if last_broma_info[1] == cur_hash:
+                        print(
+                            "[!] BromaImporter: Detected same Broma files hash. "
+                            "Will not import types..."
+                        )
+                        import_types = False
+                elif last_broma_info[1] == "":
+                    DataManager().set(
+                        "last_broma_info", (self._target_platform, cur_hash)
+                    )
+            else:
+                print(
+                    "[!] BromaImporter: Broma files hash check disabled. "
+                    "Skipping..."
+                )
+            
             set_c_header_path(
                 BIUtils.get_stl_headers_path(self._target_platform)
             )
 
-        if HAS_IDACLANG and import_types:
-            if BIUtils.verify_types(self._target_platform) and \
-                    self._codegen_classes(root.classesAsDict()):
+            if BIUtils.verify_types():
+                types_file = self._codegen_classes()
                 srclang_parser = IDAUtils.get_srclang_parser()
                 select_srclang_parser_by_name(srclang_parser)
 
@@ -583,10 +726,11 @@ class BromaImporter:
                         BIUtils.get_parser_argv(self._target_platform)
                     )
 
+                # TODO: map a 'Skip Type Import' button to CANCEL for this after moving to BromaTypeImporter
+                # might have to change it to AskPopup instead.
                 SimplePopup(
                     "Importing Types...\n"
-                    "This will probably freeze IDA for a couple of "
-                    "seconds, if not minutes.\n"
+                    "This can possibly freeze IDA for up to minutes.\n"
                     "Click on 'OK' to confirm.",
                     "OK"
                 ).show()
@@ -597,103 +741,36 @@ class BromaImporter:
                     parse_decls_with_parser(
                         srclang_parser,
                         None,
-                        IDAUtils.get_ida_path(
-                            "plugins/broma_ida/types/codegen/"
-                            f"{self._target_platform}.hpp"
-                        ).as_posix(),
+                        types_file.as_posix(),
                         True
                     )
 
-                self._has_types = True
+                BIUtils.get_type_info("", True)
+
+                self._has_types = BIUtils.verify_types()
             else:
                 self._has_types = len(IDAUtils.get_dirtree_entries(
                     DIRTREE_LOCAL_TYPES, "/BromaIDA"
                 )) != 0
 
-        if self._target_platform.startswith("android"):
-            for class_name, broma_class in root.classesAsDict().items():
-                for field in broma_class.fields:
-                    function_field = field.getAsFunctionBindField()
-
-                    if function_field is None:
-                        continue
-
-                    self.bindings.append(
-                        Binding.from_pybroma(class_name, function_field)
-                    )
-        else:
-            for class_name, broma_class in root.classesAsDict().items():
-                for field in broma_class.fields:
-                    function_field = field.getAsFunctionBindField()
-
-                    if function_field is None:
-                        continue
-
-                    func_addr = int(
-                        function_field.binds.platforms_as_dict().get(
-                            self._target_platform, "-0x1"
-                        ), 16
-                    )
-
-                    if func_addr == -1:
-                        continue
-
-                    function = function_field.prototype
-
-                    # Runs only for the first time an address has a duplicate
-                    if func_addr in self.bindings:
-                        dup_binding = self.bindings[
-                            self.bindings.index(func_addr)  # type: ignore
-                        ]
-                        error_location = \
-                            f"{class_name}::{function.name} " \
-                            f"and {dup_binding.short_info}"
-
-                        if f"{class_name}::{function.name}" == \
-                                dup_binding.qualified_name:
-                            print(
-                                "[!] BromaImporter: Duplicate binding with "
-                                f"same qualified name! ({error_location})"
-                            )
-                            continue
-                        elif class_name == dup_binding.class_name:
-                            print(
-                                "[!] BromaImporter: Duplicate binding within "
-                                f"same class! ({error_location})"
-                            )
-                            continue
-
-                        print(
-                            "[!] BromaImporter: Duplicate binding! "
-                            f"({class_name}::{function.name} "
-                            f"and {dup_binding.short_info})"
-                        )
-                        self.bindings.remove(dup_binding)
-                        self.duplicates[func_addr] = []
-                        self.duplicates[func_addr].append(dup_binding)
-
-                    if func_addr in self.duplicates:
-                        self.duplicates[func_addr].append(
-                            Binding.from_pybroma(class_name, function_field)
-                        )
-                        continue
-
-                    self.bindings.append(
-                        Binding.from_pybroma(class_name, function_field)
-                    )
+        self._load_broma_bindings()
 
         if HAS_IDACLANG and import_types and self._has_types:
             self._post_import_types()
 
         print(
             f"\n\n[+] BromaImporter: Read {len(self.bindings)} "
-            f"{IDAUtils.get_platform_printable()} bindings "
-            f"and {len(self.duplicates)} duplicates "
-            f"from {self._file_path}\n\n"
+            f"{IDAUtils.get_platform_printable()} bindings, "
+            f"{len(self.duplicates)} duplicates "
+            f"and {len(self._broma_files)} Broma files "
+            f"from {str(self._bromas_path)}\n\n"
         )
 
     def import_into_idb(self):
-        """Imports the bindings into the current idb"""
+        """
+        Imports the parsed bindings from the Broma files
+        into the current IDB.
+        """
         if self._target_platform.startswith("android"):
             if not self._has_types:
                 return
@@ -717,8 +794,8 @@ class BromaImporter:
                     continue
 
                 if BIUtils.has_mismatch(
-                        IDAUtils.get_function_info(ida_ea),
-                        binding
+                    IDAUtils.get_function_info(ida_ea),
+                    binding
                 ):
                     BIUtils.set_function_signature(ida_ea, binding)
 
@@ -750,11 +827,11 @@ class BromaImporter:
             if ida_func is None and not DataManager().get("skip_missing_function_prompts"):
                 with TempJumpToAddress(ida_ea):
                     if AskPopup(
-                            f"{hex(ida_ea)} is not marked as a function by "
-                            "IDA.\nWould you like to mark it as a "
-                            "function now?",
-                            "Yes", "No",
-                            icon="INFO"
+                        f"{hex(ida_ea)} is not marked as a function by "
+                        "IDA.\nWould you like to mark it as a "
+                        "function now?",
+                        "Yes", "No",
+                        icon="INFO"
                     ).show() == ASKBTN_BTN1:
                         add_func(ida_ea)
                         IDAUtils.get_function_info(ida_ea, True)
@@ -777,8 +854,8 @@ class BromaImporter:
                 continue
 
             if self._has_types and BIUtils.has_mismatch(
-                    IDAUtils.get_function_info(ida_ea),
-                    binding
+                IDAUtils.get_function_info(ida_ea),
+                binding
             ):
                 BIUtils.set_function_signature(ida_ea, binding)
 
@@ -851,9 +928,16 @@ class BromaImporter:
                     )
 
     def _reset(self):
-        """Resets a BromaParser instance because not doing so results
-        in a re-run of the script populating the same bindings list"""
+        """
+        Resets the current BromaImporter instance.
+        Not doing so would result in a re-run of
+        the script populating the same parsed content.
+        """
         self._target_platform = ""  # type: ignore
-        self._file_path = ""
+        self._bromas_path = Path()
+        self._broma_files.clear()
+        self._has_types = False
+
         self.bindings.clear()
+        self.classes.clear()
         self.duplicates.clear()

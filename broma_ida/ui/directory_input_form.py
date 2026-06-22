@@ -14,13 +14,12 @@ class DirectoryInputForm(DynamicForm):
     Directory string is saved in DirectoryInputForm.saved_controls.iDir
     """
 
-    def __init__(self, input_str: str):
+    def __init__(self, prompt: str):
         super().__init__(f"""STARTITEM 0
-BUTTON YES NONE
-BUTTON NO NONE
-BUTTON CANCEL NONE
+BUTTON YES Done
+BUTTON CANCEL Cancel
 BromaIDA
-{{FormChangeCb}}<{input_str}:{{iDir}}>""", {
+{{FormChangeCb}}<{prompt}:{{iDir}}>""", {
             "FormChangeCb": Form.FormChangeCb(self.onFormChange),
             "iDir": Form.DirInput(swidth=35)
         })
@@ -28,11 +27,9 @@ BromaIDA
     def onFormChange(self, fid: int) -> int:
         super().onFormChange(fid)
 
-        if fid in [-2, -3]:
-            dir_value: str = self.GetControlValue(self.iDir)  # type: ignore
-
-            if not path_exists(dir_value):
-                ida_warning("Please input a valid path!")
+        if fid == -2:
+            if not path_exists(self.GetControlValue(self.iDir)):
+                ida_warning("Please select a valid folder!")
                 return 0
 
         return 1

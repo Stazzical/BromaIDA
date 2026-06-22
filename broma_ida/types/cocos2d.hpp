@@ -109,11 +109,6 @@ public: varType get##funName(void) const { return varName; }
 protected: varType varName;                                     \
 public: varType get##funName(void) { return varName; }
 
-#define CC_PROPERTY(varType, varName, funName) \
-protected: varType varName;                    \
-public: virtual varType get##funName(void);    \
-public: virtual void set##funName(varType var);
-
 #define CREATE_FUNC(__TYPE__)            \
 	static __TYPE__* create() {          \
 	    __TYPE__* pRet = new __TYPE__(); \
@@ -765,6 +760,17 @@ namespace cocos2d
 		kCCVerticalTextAlignmentBottom,
 	} CCVerticalTextAlignment;
 
+	typedef enum {
+		/// An horizontal orientation where the Left is nearer
+		kCCTransitionOrientationLeftOver = 0,
+		/// An horizontal orientation where the Right is nearer
+		kCCTransitionOrientationRightOver = 1,
+		/// A vertical orientation where the Up is nearer
+		kCCTransitionOrientationUpOver = 0,
+		/// A vertical orientation where the Bottom is nearer
+		kCCTransitionOrientationDownOver = 1,
+	} tOrientation;
+
 	typedef enum eImageFormat
 	{
 		kCCImageFormatJPEG      = 0,
@@ -872,6 +878,13 @@ namespace cocos2d
 		
 		ccTouchMax = 4,
 	};
+
+	typedef enum {
+		kCCScrollViewDirectionNone = -1,
+		kCCScrollViewDirectionHorizontal = 0,
+		kCCScrollViewDirectionVertical,
+		kCCScrollViewDirectionBoth
+	} CCScrollViewDirection;
 
 	enum ResolutionPolicy
 	{
@@ -1161,6 +1174,21 @@ namespace cocos2d
 		float  duration;           // the soft keyboard animation duration
 	} CCIMEKeyboardNotificationInfo;
 
+	typedef struct sImageTGA {
+		int status;
+		unsigned char type, pixelDepth;
+
+		/** map width */
+		signed short width;
+
+		/** map height */
+		signed short height;
+
+		/** raw data */
+		unsigned char *imageData;
+		int flipped;
+	} tImageTGA;
+
 	typedef struct GLFWvidmode
 	{
 		/*! The width, in screen coordinates, of the video mode.
@@ -1212,6 +1240,8 @@ namespace cocos2d
 	} ccCArray;
 
 	/* typedefs */
+	typedef unsigned char CC_XML_CHAR;
+
 	typedef void (CCObject::*SEL_SCHEDULE)(float);
 	typedef void (CCObject::*SEL_CallFunc)();
 	typedef void (CCObject::*SEL_CallFuncN)(CCNode*);
@@ -1828,6 +1858,14 @@ namespace cocos2d
 		CCFreeTypeFont* m_ft;
 	#endif
 #endif
+	};
+
+	class CCSAXDelegator
+	{
+	public:
+		virtual void startElement(void *ctx, const char *name, const char **atts) = 0;
+		virtual void endElement(void *ctx, const char *name) = 0;
+		virtual void textHandler(void *ctx, const char *s, int len) = 0;
 	};
 
 	class CCTexture2D : public CCObject
@@ -2658,7 +2696,6 @@ namespace cocos2d
 		int  excuteScriptTouchHandler(int nEventType, CCSet *pTouches);
 	};
 
-
 	// CCNodeRGBA
 	class CCRGBAProtocol
 	{
@@ -3095,7 +3132,6 @@ namespace cocos2d
 		CCSceneDelegate* m_pDelegate;
 	};
 
-
 	// CCSceneTransitionDelegate
 	// @note RobTop Addition
 	class CCSceneTransitionDelegate
@@ -3114,7 +3150,7 @@ namespace cocos2d
 
 	class CCTextureAtlas : public CCObject 
 	{
-	protected:
+	public:
 		GLushort*           m_pIndices;
 	#if CC_TEXTURE_ATLAS_USE_VAO
 		GLuint              m_uVAOname;
@@ -3709,6 +3745,13 @@ namespace cocos2d
 	protected:
 		float m_elapsed;
 		bool   m_bFirstTick;
+	};
+
+
+	class CCTransitionEaseScene
+	{
+	public:
+		virtual CCActionInterval * easeActionWithAction(CCActionInterval * action) = 0;
 	};
 	
 
@@ -5483,6 +5526,32 @@ namespace cocos2d
 		unsigned int m_uMapStartChar;
 	};
 
+	class CCTileMapAtlas : public CCAtlasNode
+	{
+		CC_PROPERTY(struct sImageTGA*, m_pTGAInfo, TGAInfo);
+	public:
+		CCTileMapAtlas();
+		virtual ~CCTileMapAtlas();
+
+		static CCTileMapAtlas * create(const char *tile, const char *mapFile, int tileWidth, int tileHeight);
+
+		bool initWithTileFile(const char *tile, const char *mapFile, int tileWidth, int tileHeight);
+		ccColor3B tileAt(const CCPoint& position);
+		void setTile(const ccColor3B& tile, const CCPoint& position);
+		void releaseMap();
+	private:
+		void loadTGAfile(const char *file);
+		void calculateItemsToRender();
+		void updateAtlasValueAt(const CCPoint& pos, const ccColor3B& value, unsigned int index);
+		void updateAtlasValues();
+
+	public:
+		//! x,y to atlas dictionary
+		CCDictionary* m_pPosToAtlasIndex;
+		//! numbers of tiles to render
+		int m_nItemsToRender;
+	};
+
 	class CCDirector : public CCObject, public TypeInfo
 	{
 	public:
@@ -6571,6 +6640,146 @@ namespace cocos2d
 
 
 		// misc
+		class CCSortableObject
+		{
+		public:
+			virtual ~CCSortableObject() {}
+			virtual void setObjectID(unsigned int objectID) = 0;
+			virtual unsigned int getObjectID() = 0;
+		};
+
+
+		class CCScrollView;
+
+
+		class CCScrollViewDelegate
+		{
+		public:
+			virtual ~CCScrollViewDelegate() {}
+			virtual void scrollViewDidScroll(CCScrollView* view) = 0;
+			virtual void scrollViewDidZoom(CCScrollView* view) = 0;
+		};
+
+
+		class CCScrollView : public CCLayer
+		{
+		public:
+			CCScrollView();
+			virtual ~CCScrollView();
+
+			bool init();
+			virtual void registerWithTouchDispatcher();
+
+			static CCScrollView* create(CCSize size, CCNode* container = NULL);
+
+			static CCScrollView* create();
+
+			bool initWithViewSize(CCSize size, CCNode* container = NULL);
+
+			void setContentOffset(CCPoint offset, bool animated = false);
+			CCPoint getContentOffset();
+			void setContentOffsetInDuration(CCPoint offset, float dt);
+
+			void setZoomScale(float s);
+			void setZoomScale(float s, bool animated);
+
+			float getZoomScale();
+
+			void setZoomScaleInDuration(float s, float dt);
+			CCPoint minContainerOffset();
+			CCPoint maxContainerOffset();
+			bool isNodeVisible(CCNode * node);
+			void pause(CCObject* sender);
+			void resume(CCObject* sender);
+
+
+			bool isDragging() {return m_bDragging;}
+			bool isTouchMoved() { return m_bTouchMoved; }
+			bool isBounceable() { return m_bBounceable; }
+			void setBounceable(bool bBounceable) { m_bBounceable = bBounceable; }
+
+			CCSize getViewSize() { return m_tViewSize; }
+			void setViewSize(CCSize size);
+
+			CCNode * getContainer();
+			void setContainer(CCNode * pContainer);
+
+			CCScrollViewDirection getDirection() { return m_eDirection; }
+			virtual void setDirection(CCScrollViewDirection eDirection) { m_eDirection = eDirection; }
+
+			CCScrollViewDelegate* getDelegate() { return m_pDelegate; }
+			void setDelegate(CCScrollViewDelegate* pDelegate) { m_pDelegate = pDelegate; }
+
+			/** override functions */
+			// optional
+			virtual bool ccTouchBegan(CCTouch *pTouch, CCEvent *pEvent);
+			virtual void ccTouchMoved(CCTouch *pTouch, CCEvent *pEvent);
+			virtual void ccTouchEnded(CCTouch *pTouch, CCEvent *pEvent);
+			virtual void ccTouchCancelled(CCTouch *pTouch, CCEvent *pEvent);
+
+			virtual void setContentSize(const CCSize & size);
+			virtual const CCSize& getContentSize() const;
+
+			void updateInset();
+			bool isClippingToBounds() { return m_bClippingToBounds; }
+			void setClippingToBounds(bool bClippingToBounds) { m_bClippingToBounds = bClippingToBounds; }
+			virtual void visit();
+			virtual void addChild(CCNode * child, int zOrder, int tag);
+			virtual void addChild(CCNode * child, int zOrder);
+			virtual void addChild(CCNode * child);
+			void setTouchEnabled(bool e);
+		private:
+			void relocateContainer(bool animated);
+			void deaccelerateScrolling(float dt);
+			void performedAnimatedScroll(float dt);
+			void stoppedAnimatedScroll(CCNode* node);
+			void beforeDraw();
+			void afterDraw();
+			void handleZoom();
+
+		protected:
+			CCRect getViewRect();
+		public:
+			float m_fZoomScale;
+			float m_fMinZoomScale;
+			float m_fMaxZoomScale;
+			CCScrollViewDelegate* m_pDelegate;
+
+			CCScrollViewDirection m_eDirection;
+			bool m_bDragging;
+
+			CCPoint m_tContentOffset;
+
+			CCNode* m_pContainer;
+			bool m_bTouchMoved;
+			CCPoint m_fMaxInset;
+			CCPoint m_fMinInset;
+			bool m_bBounceable;
+
+			bool m_bClippingToBounds;
+
+			CCPoint m_tScrollDistance;
+			CCPoint m_tTouchPoint;
+			float m_fTouchLength;
+			CCArray* m_pTouches;
+			CCSize m_tViewSize;
+			float m_fMinScale, m_fMaxScale;
+			CCRect m_tParentScissorRect;
+			bool m_bScissorRestored;
+		public:
+			enum ScrollViewScriptEventType
+			{
+				kScrollViewScroll   = 0,
+				kScrollViewZoom,
+			};
+			void registerScriptHandler(int nFunID,int nScriptEventType);
+			void unregisterScriptHandler(int nScriptEventType);
+			int  getScriptHandler(int nScriptEventType);
+		public:
+			std::map<int,int> m_mapScriptHandler;
+		};
+
+
 		class CCScale9Sprite : public CCNodeRGBA
 		{
 		public:

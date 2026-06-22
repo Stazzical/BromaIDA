@@ -48,7 +48,7 @@ class BEUtils:
             ArgType(str(arg.type), arg.name) for arg in func_info
         ]
 
-        # remove return ptr argument
+        # remove return ptr (retstr) argument
         if "std::" in str(func_info.rettype):
             args = args[1:]
 
@@ -56,9 +56,9 @@ class BEUtils:
 
     @staticmethod
     def parse_str_args(
-            args_str: str | Any,
-            class_name: str,
-            is_static: bool
+        args_str: str | Any,
+        class_name: str,
+        is_static: bool
     ) -> list[ArgType]:
         """Mini parser that converts a string of arguments
         into a list of ArgTypes
@@ -228,9 +228,9 @@ class BromaExporter:
         }
 
     def _get_broma_string(
-            self,
-            parsed_broma_line: Match[str],
-            binding: Binding
+        self,
+        parsed_broma_line: Match[str],
+        binding: Binding
     ) -> str:
         """Gets the Broma line to export after adding the binding's address
 
@@ -291,15 +291,15 @@ class BromaExporter:
         self.num_exports += 1
 
         if DataManager().get("export_return_types") and (
-                binding.ret.type not in (
-                    "TodoReturn", "", parsed_broma_line.group(2)
-                ) and
-                # not ctor or dtor
-                parsed_broma_line.group(2) is not None
+            binding.ret.name not in (
+                "TodoReturn", "", parsed_broma_line.group(2)
+            ) and
+            # not ctor or dtor
+            parsed_broma_line.group(2) is not None
         ):
             self.num_ret_exports += 1
 
-            sub_repl = str(binding.ret)
+            sub_repl = binding.ret.name
 
             new_line = sub(
                 self.RX_METHOD,
@@ -326,7 +326,7 @@ class BromaExporter:
             )):
                 self.num_args_names_exports += 1
 
-                sub_repl = binding.get_args_str(True, True)
+                sub_repl = binding.get_args_str()
 
                 new_line = sub(
                     self.RX_METHOD,
@@ -476,16 +476,14 @@ class BromaExporter:
                 self.overloads[original_name].append(Binding(
                     split_name[1],
                     split_name[0],
-                    ea - get_imagebase(),
                     RetType(
-                        str(
-                            func_info.rettype if func_info else ""
-                        ).replace(" *", "*").replace(" &", "&")
+                        str(func_info.rettype if func_info else "")
                     ),
                     BEUtils.from_ida_args(ea),
                     is_static=str(
                         first_arg.type if first_arg else ""
-                    ) != f"{split_name[0]} *"
+                    ) != f"{split_name[0]}*",
+                    address=ea - get_imagebase()
                 ))
 
                 continue
@@ -493,16 +491,14 @@ class BromaExporter:
             self.push_binding(Binding(
                 split_name[1],
                 split_name[0],
-                ea - get_imagebase(),
                 RetType(
-                    str(
-                        func_info.rettype if func_info else ""
-                    ).replace(" *", "*").replace(" &", "&")
+                    str(func_info.rettype if func_info else "")
                 ),
                 BEUtils.from_ida_args(ea),
                 is_static=str(
-                        first_arg.type if first_arg else ""
-                    ) != f"{split_name[0]} *"
+                    first_arg.type if first_arg else ""
+                ) != f"{split_name[0]}*",
+                address=ea - get_imagebase()
             ))
 
     def export(self):
@@ -547,14 +543,12 @@ class BromaExporter:
                         continue
 
                     for i, overload in enumerate(
-                            self.overloads[qualified_name]
+                        self.overloads[qualified_name]
                     ):
-                        if overload.has_same_args(
-                                BEUtils.parse_str_args(
-                                    func.group(4),
-                                    current_class_name,
-                                    func.group(1) == "static",
-                                )
+                        if overload.parameters == BEUtils.parse_str_args(
+                            func.group(4),
+                            current_class_name,
+                            func.group(1) == "static",
                         ):
                             fw.write(
                                 self._get_broma_string(func, overload)
@@ -566,12 +560,10 @@ class BromaExporter:
                     fw.write(line)
                     continue
 
-                if not self.bindings[qualified_name].has_same_args(
-                        BEUtils.parse_str_args(
-                            func.group(4),
-                            current_class_name,
-                            func.group(1) == "static"
-                        )
+                if not self.bindings[qualified_name].parameters == BEUtils.parse_str_args(
+                    func.group(4),
+                    current_class_name,
+                    func.group(1) == "static"
                 ):
                     fw.write(line)
                     continue

@@ -1,51 +1,68 @@
 from dataclasses import dataclass, field, is_dataclass
-
 from functools import cache, cached_property
-
-from re import sub
 
 from ida_name import is_visible_cp
 
 from pybroma import FunctionBindField
 
 from broma_ida.broma.argtype import ArgType, RetType
-from broma_ida.utils import HAS_IDACLANG, IDAUtils
+from broma_ida.utils import IDAUtils
 
 
 @dataclass
-class Binding:
-    """Binding type"""
+class FunctionSignature:
+    """
+    A container for the signature of a C++ function.
+    Includes the return type, and arguments as a list of
+    ArgType constructed classes.
+    """
     name: str
     class_name: str
-    address: int
-
     ret: RetType = field(default_factory=lambda: RetType(""))
     parameters: list[ArgType] = field(default_factory=list)
     is_virtual: bool = False
     is_static: bool = False
+    is_const: bool = False
+    is_inline: bool = False
+    is_missing: bool = False
+    
+    @classmethod
+    def from_field(
+        cls,
+        class_name: str,
+        f: FunctionBindField
+    ) -> FunctionSignature:
+        proto = f.prototype
+        # get address as an int at base of 16 (hexadecimal int)
+        # here we only use it to know if the function was inlined
+        # on the target platform
 
-    @staticmethod
-    def from_pybroma(class_name: str, f: FunctionBindField):
-        func = f.prototype
+        # -2 is explicitly inlined, -1 is missing
+        raw_addr = getattr(
+            f.binds,
+            IDAUtils.get_platform(),
+            -1
+        )
 
-        return Binding(
-            func.name, class_name,
-            int(
-                f.binds.platforms_as_dict().get(
-                    IDAUtils.get_platform(), "-0x1"
-                ), 16
-            ),
-            RetType(func.ret.name.replace("gd::", "std::")),
-            [
-                ArgType(arg_t.name.replace("gd::", "std::"), name)
-                for name, arg_t in func.args.items()
+        return cls(
+            name=proto.name,
+            class_name=class_name,
+            ret=RetType(proto.ret.name),
+            parameters=[
+                ArgType(arg_t.name, param_name)
+                for param_name, arg_t in proto.args.items()
             ],
-            func.is_virtual, func.is_static
+            is_virtual=proto.is_virtual,
+            is_static=proto.is_static,
+            is_const=proto.is_const,
+            is_inline=(raw_addr == -2),
+            is_missing=(raw_addr == -1)
         )
 
     @property
     def qualified_name(self) -> str:
-        """The qualified name of a binding.
+        """
+        The qualified name of a binding.
 
         Returns:
             str: ClassName::MethodName
@@ -54,9 +71,9 @@ class Binding:
 
     @cached_property
     def ida_qualified_name(self) -> str:
-        """The IDA qualified name of a binding.
-        (sometimes different from qualified_name because "~"
-        isn't a valid symbol for names)
+        """
+        The IDA qualified name of a binding.
+        '~' replaced with 'd' if not a visible codepoint.
 
         Returns:
             str
@@ -65,130 +82,187 @@ class Binding:
             "~", "~" if is_visible_cp(ord("~")) else "d"
         )
 
-    @staticmethod
-    def __west_rp_ify(t: str) -> str:
-        """convert east (ew) reference or pointer (and const) to west one
-        (just as god intended)
-
-        Args:
-            t (str):
-
-        Returns:
-            str
+    @property
+    def has_stl_args(self) -> bool:
         """
-        return sub(
-            r"(?:(.*)\s+(&|\*)\s*const|(.*)(?:\s+)const(?:\s*)(&|\*)?)$",
-            r"const \1\2\3\4", t
+        True if any parameter contains a non-string STL type.
+        Used to determine whether special STL fixup is needed
+        when applying the signature to IDA.
+        """
+        # we don't have an issue with std::string, only with generic stl types
+        return any(
+            "std::" in p.type and p.stripped_type != "std::string"
+            for p in self.parameters
         )
 
-    @cache
+    @property
+    def has_stl_ret(self) -> bool:
+        """
+        True if the return type is a non-string STL type.
+        Used to determine whether special STL fixup is needed
+        when applying the signature to IDA.
+        """
+        return (
+            "std::" in self.ret.type
+            and self.ret.stripped_type != "std::string"
+        )
+
+    @property
+    def needs_stl_fixup(self) -> bool:
+        """
+        True if this signature requires the STL parameter
+        fixup path in IDA rather than a plain SetType call.
+        """
+        return self.has_stl_args or self.has_stl_ret
+
     def get_args_str(
-            self,
-            include_this_arg: bool = True,
-            convert_east_to_west_ptr: bool = False
+        self,
+        include_this_arg: bool = True,
+        expand_stl: bool = False
     ) -> str:
-        """Gets a function's argument string.
+        """
+        Gets a function's arguments signature string.
 
         Args:
-            include_this_arg (bool, optional): Include this argument.
+            include_this_arg (bool, optional): Include the `this` argument.
                 Defaults to True.
-            convert_east_to_west_ptr (bool, optional): Converts east pointer,
-                reference and const to west one (as god intended).
-                Defaults to True.
+            expand_stl (bool, optional): Uses STL-expanded types instead
+                of normal ones. Defaults to False.
 
         Returns:
             str
         """
-        args = self.parameters
+        args = list(self.parameters)
 
-        if not include_this_arg and self.is_static:
+        has_this_arg = (
+            len(args) > 0
+            and args[0].type == f"{self.class_name}*"
+        )
+
+        if include_this_arg and not self.is_static:
+            if not has_this_arg:
+                args.insert(0, ArgType(f"{self.class_name}*", "this"))
+        elif has_this_arg:
             args = args[1:]
 
-        has_this_arg = False
-        if len(args) > 0 and \
-                args[0].type == f"{self.class_name}*":
-            has_this_arg = True
-
-        if include_this_arg and not self.is_static and \
-                not has_this_arg:
-            args.insert(0, ArgType(f"{self.class_name}*", "this"))
-
         return ", ".join([
-            self.__west_rp_ify(str(arg)) if convert_east_to_west_ptr
+            arg.expanded_type if expand_stl
             else str(arg)
             for arg in args
         ])
 
-    def has_same_args(self, other_args: list[ArgType]) -> bool:
-        """Compares the binding's arguments to that of another one.
-        Used to check if a binding is an overload.
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, FunctionSignature):
+            return (
+                self.name == other.name
+                and self.parameters == other.parameters
+            )
 
-        Args:
-            other_args (list[ArgType]): The other binding's arguments.
+        return NotImplemented
 
-        Returns:
-            bool
-        """
-        if len(self.parameters) != len(other_args):
-            return False
+    def __hash__(self) -> int:
+        return hash((
+            self.name,
+            tuple(p.type for p in self.parameters)
+        ))
 
-        # assume the user is a good boy and won't export something wrong :D
-        if not HAS_IDACLANG:
-            return True
+    def __str__(self) -> str:
+        # this does NOT use qualified_name
+        return (
+            f"{'static ' if self.is_static else ''}"
+            f"{'virtual ' if self.is_virtual else ''}"
+            f"{self.ret.type} {self.name}({self.get_args_str(include_this_arg=False)})"
+            f"{' const;' if self.is_const else ';'}"
+        )
 
-        for broma, other in zip(self.parameters, other_args):
-            if self.__west_rp_ify(broma.type.replace("&", "*")) != \
-                    self.__west_rp_ify(other.type).replace(" *", "*"):
-                return False
 
-        return True
+@dataclass
+class Binding(FunctionSignature):
+    """FunctionSignature extended with an address for IDA-specific use."""
+    address: int = -1
+
+    @classmethod
+    def from_field(
+        cls,
+        class_name: str,
+        f: FunctionBindField
+    ) -> Binding:
+        proto = f.prototype
+        raw_addr = getattr(
+            f.binds,
+            IDAUtils.get_platform(),
+            -1
+        )
+
+        return cls(
+            name=proto.name,
+            class_name=class_name,
+            ret=RetType(proto.ret.name),
+            parameters=[
+                ArgType(arg_t.name, param_name)
+                for param_name, arg_t in proto.args.items()
+            ],
+            is_virtual=proto.is_virtual,
+            is_static=proto.is_static,
+            is_const=proto.is_const,
+            is_inline=(raw_addr == -2),
+            is_missing=(raw_addr == -1),
+            address=raw_addr
+        )
+
+    @property
+    def has_address(self) -> bool:
+        """True if the binding is not missing or inlined."""
+        return not self.is_inline and not self.is_missing
 
     @property
     def short_info(self) -> str:
-        """Short info about the binding
+        """
+        Short info about the binding.
 
         Returns:
             str: "[binding qualified name] @ [binding address]"
         """
-        return f"""{self.qualified_name} @ {hex(self.address)}"""
+        return f"{self.qualified_name} @ {hex(self.address)}"
 
-    @cached_property
+    @property
     def signature(self) -> str:
-        """Returns a C++ function signature for the given function.
-        Example:
-        "virtual void GameObject::setOrientedRectDirty(GameObject*, bool);"
+        """C++ function signature string."""
+        # IDA drops const declaration for methods
+        return (
+            f"{'static ' if self.is_static else ''}"
+            f"{'virtual ' if self.is_virtual else ''}"
+            f"{self.ret.expanded_type} "
+            f"{self.ida_qualified_name}({self.get_args_str(expand_stl=True)});"
+        )
 
-        Returns:
-            str
-        """
-        return \
-            f"{'static ' if self.is_static else ''}" \
-            f"{'virtual ' if self.is_virtual else ''}" \
-            f"{self.ret.type} {self.ida_qualified_name}" \
-            f"({self.get_args_str(True, True)});"
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, int):
+            return self.address == other
+        elif isinstance(other, str):
+            return self.qualified_name == other
+        elif isinstance(other, Binding):
+            return (
+                self.signature == other.signature
+                and self.address == other.address
+            )
 
-    def __eq__(self, value: object) -> bool:
-        if isinstance(value, int):
-            return self.address == value
-        elif isinstance(value, str):
-            return self.qualified_name == value
-        elif is_dataclass(value):
-            return self.__dataclass_fields__ == value.__dataclass_fields__
-
-        return False
+        return NotImplemented
 
     def __hash__(self) -> int:
         return hash((
-            self.qualified_name, self.address,
-            (str(x) for x in self.parameters)
+            self.qualified_name,
+            self.address,
+            tuple(str(arg) for arg in self.parameters)
         ))
 
     def __str__(self) -> str:
-        return f"{'virtual ' if self.is_virtual else ''}" \
-            f"{'static ' if self.is_static else ''}" \
-            f"{self.ret.type} " \
-            f"{self.class_name}::{self.name}" \
-            f"""({", ".join([
-                str(arg) for arg in self.parameters
-            ])}) @ {hex(self.address)}; """ \
+        return (
+            f"{'virtual ' if self.is_virtual else ''}"
+            f"{'static ' if self.is_static else ''}"
+            f"{self.ret.expanded_type} "
+            f"{self.class_name}::{self.name}"
+            f"({', '.join(arg.expanded_type for arg in self.parameters)})"
+            f" @ {hex(self.address)}; "
             f"({self.ida_qualified_name})"
+        )
