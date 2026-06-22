@@ -5,10 +5,10 @@ import re
 
 from pybroma import Class
 
+from broma_ida.metadata import SCRIPT_VERSION
 from broma_ida.broma.class_graph import ClassGraph
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.class_builder.class_builder import ClassBuilder, STLClassBuilder
-from broma_ida.utils import IDAUtils
 
 from ida_nalt import get_root_filename
 
@@ -65,7 +65,7 @@ class BromaCodegen:
             open_ns = " ".join(
                 f"namespace {ns} {{" for ns in parts[:-1]
             )
-            close_ns = " }" * (len(parts) - 1)
+            close_ns = (" }" * (len(parts) - 1))[1:]
             f.write(f"{open_ns} class {bare}; {close_ns}\n")
         else:
             f.write(f"class {name};\n")
@@ -106,9 +106,10 @@ class BromaCodegen:
             "w",
             buffering = 10 * 1024 * 1024
         ) as f:
+            # Set up values used in .hpp for platform-specific definitions
             f.write(
                 FILE_HEADER.format_map({
-                    "BROMAIDA_VERSION": IDAUtils.SCRIPT_VERSION,
+                    "BROMAIDA_VERSION": SCRIPT_VERSION,
                     "BROMAIDA_PLATFORM_MACRO_NAME":
                         self._get_bromaida_platform_macro(),
                     "BROMAIDA_IS_PLATFORM_MACHO_VALUE":
@@ -184,7 +185,7 @@ class BromaCodegen:
 
         Args:
             file (TextIOWrapper): Target file to copy content into.
-            fname (str): File to copy content from.
+            fname (str): File name to copy content from.
             incl_mode (Literal["parse", "filter", "enums_only", ""]):
                 Whether to parse includes, filter includes,
                 only keep enum declarations, or do nothing.
@@ -293,7 +294,8 @@ class BromaCodegen:
                 scopes.pop()
 
     def _filter_relative_includes(self, lines: list[str]) -> list[str]:
-        """Comments out relative includes from a list of lines
+        """
+        Comments out relative includes from a list of lines
 
         Args:
             lines (list[str])

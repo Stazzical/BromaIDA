@@ -1,5 +1,5 @@
-from dataclasses import dataclass, field, is_dataclass
-from functools import cache, cached_property
+from dataclasses import dataclass, field
+from functools import cached_property
 
 from ida_name import is_visible_cp
 

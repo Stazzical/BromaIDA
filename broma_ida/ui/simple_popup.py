@@ -1,5 +1,7 @@
 from ida_kernwin import Form
 
+from broma_ida.metadata import PLUGIN_NAME
+
 from broma_ida.ui.types.dynamic_form import DynamicForm
 
 
@@ -11,16 +13,18 @@ class SimplePopup(DynamicForm):
         button2: str | None = None,
         button3: str | None = None,
         default: int = 1,
-        title: str = "BromaIDA"
+        title: str = PLUGIN_NAME
     ):
-        """Creates a simple popup
+        """
+        Creates a simple popup.
 
         Args:
             content (str): Popup content
             button1 (str): Button 1 text
             button2 (str, optional): Button 2 text. Defaults to None (hidden).
             button3 (str, optional): Button 3 text. Defaults to None (hidden).
-            title (str, optional): Title of the popup. Defaults to "BromaIDA".
+            title (str, optional): Title of the popup.
+                Defaults to `broma_ida.metadata.PLUGIN_NAME`.
         """
         set_dflt = lambda x: "*" if x == default else ""  # noqa: E731
 

@@ -7,7 +7,8 @@ __all__ = ["WaitBox"]
 
 class WaitBox:
     def __init__(self, message: str, hide_cancel: bool = True):
-        """Creates a wait box context manager.
+        """
+        Creates a wait box context manager.
 
         Args:
             message (str): The wait box message
@@ -39,7 +40,8 @@ class WaitBox:
         hide_wait_box()
 
     def was_cancelled(self) -> int:
-        """Checks if the user cancelled the wait box.
+        """
+        Checks if the user cancelled the wait box.
 
         Returns:
             int: 0 if not cancelled, 1 if cancelled and message is displayed,

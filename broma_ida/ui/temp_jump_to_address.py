@@ -7,10 +7,11 @@ __all__ = ["TempJumpToAddress"]
 
 class TempJumpToAddress:
     def __init__(self, ea: int) -> None:
-        """Temporary jump to address in IDA View.
+        """
+        Temporary jump to address in IDA View.
 
         Args:
-            ea (int): The address to jump to
+            ea (int): The address to jump to.
         """
         self.ea = ea
         self.cur_ea = get_screen_ea()

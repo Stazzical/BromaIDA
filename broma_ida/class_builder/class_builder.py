@@ -47,7 +47,7 @@ class ClassBuilder:
             if sig.is_inline:
                 continue
 
-            # skip overriden functions introduced by the secondary superclasses
+            # skip overriden functions introduced by the secondary superclasses.
             # primary overrides (if not inlined) are still needed for the change
             # in "this" argument's type for the function call
             if self._graph.is_secondary_override(
