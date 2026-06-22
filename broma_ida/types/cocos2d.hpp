@@ -2696,134 +2696,6 @@ namespace cocos2d
 		int  excuteScriptTouchHandler(int nEventType, CCSet *pTouches);
 	};
 
-	class CCScrollView;
-
-	class CCScrollViewDelegate
-	{
-	public:
-		virtual ~CCScrollViewDelegate() {}
-		virtual void scrollViewDidScroll(CCScrollView* view) = 0;
-		virtual void scrollViewDidZoom(CCScrollView* view) = 0;
-	};
-
-	class CCScrollView : public CCLayer
-	{
-	public:
-		CCScrollView();
-		virtual ~CCScrollView();
-
-		bool init();
-		virtual void registerWithTouchDispatcher();
-
-		static CCScrollView* create(CCSize size, CCNode* container = NULL);
-
-		static CCScrollView* create();
-
-		bool initWithViewSize(CCSize size, CCNode* container = NULL);
-
-		void setContentOffset(CCPoint offset, bool animated = false);
-		CCPoint getContentOffset();
-		void setContentOffsetInDuration(CCPoint offset, float dt);
-
-		void setZoomScale(float s);
-		void setZoomScale(float s, bool animated);
-
-		float getZoomScale();
-
-		void setZoomScaleInDuration(float s, float dt);
-		CCPoint minContainerOffset();
-		CCPoint maxContainerOffset();
-		bool isNodeVisible(CCNode * node);
-		void pause(CCObject* sender);
-		void resume(CCObject* sender);
-
-
-		bool isDragging() {return m_bDragging;}
-		bool isTouchMoved() { return m_bTouchMoved; }
-		bool isBounceable() { return m_bBounceable; }
-		void setBounceable(bool bBounceable) { m_bBounceable = bBounceable; }
-
-		CCSize getViewSize() { return m_tViewSize; }
-		void setViewSize(CCSize size);
-
-		CCNode * getContainer();
-		void setContainer(CCNode * pContainer);
-
-		CCScrollViewDirection getDirection() { return m_eDirection; }
-		virtual void setDirection(CCScrollViewDirection eDirection) { m_eDirection = eDirection; }
-
-		CCScrollViewDelegate* getDelegate() { return m_pDelegate; }
-		void setDelegate(CCScrollViewDelegate* pDelegate) { m_pDelegate = pDelegate; }
-
-		/** override functions */
-		// optional
-		virtual bool ccTouchBegan(CCTouch *pTouch, CCEvent *pEvent);
-		virtual void ccTouchMoved(CCTouch *pTouch, CCEvent *pEvent);
-		virtual void ccTouchEnded(CCTouch *pTouch, CCEvent *pEvent);
-		virtual void ccTouchCancelled(CCTouch *pTouch, CCEvent *pEvent);
-
-		virtual void setContentSize(const CCSize & size);
-		virtual const CCSize& getContentSize() const;
-
-		void updateInset();
-		bool isClippingToBounds() { return m_bClippingToBounds; }
-		void setClippingToBounds(bool bClippingToBounds) { m_bClippingToBounds = bClippingToBounds; }
-		virtual void visit();
-		virtual void addChild(CCNode * child, int zOrder, int tag);
-		virtual void addChild(CCNode * child, int zOrder);
-		virtual void addChild(CCNode * child);
-		void setTouchEnabled(bool e);
-	private:
-		void relocateContainer(bool animated);
-		void deaccelerateScrolling(float dt);
-		void performedAnimatedScroll(float dt);
-		void stoppedAnimatedScroll(CCNode* node);
-		void beforeDraw();
-		void afterDraw();
-		void handleZoom();
-
-	protected:
-		CCRect getViewRect();
-	public:
-		float m_fZoomScale;
-		float m_fMinZoomScale;
-		float m_fMaxZoomScale;
-		CCScrollViewDelegate* m_pDelegate;
-
-		CCScrollViewDirection m_eDirection;
-		bool m_bDragging;
-
-		CCPoint m_tContentOffset;
-
-		CCNode* m_pContainer;
-		bool m_bTouchMoved;
-		CCPoint m_fMaxInset;
-		CCPoint m_fMinInset;
-		bool m_bBounceable;
-
-		bool m_bClippingToBounds;
-
-		CCPoint m_tScrollDistance;
-		CCPoint m_tTouchPoint;
-		float m_fTouchLength;
-		CCArray* m_pTouches;
-		CCSize m_tViewSize;
-		float m_fMinScale, m_fMaxScale;
-		CCRect m_tParentScissorRect;
-		bool m_bScissorRestored;
-	public:
-		enum ScrollViewScriptEventType
-		{
-			kScrollViewScroll   = 0,
-			kScrollViewZoom,
-		};
-		void registerScriptHandler(int nFunID,int nScriptEventType);
-		void unregisterScriptHandler(int nScriptEventType);
-		int  getScriptHandler(int nScriptEventType);
-	public:
-		std::map<int,int> m_mapScriptHandler;
-	};
-
 	// CCNodeRGBA
 	class CCRGBAProtocol
 	{
@@ -3258,12 +3130,6 @@ namespace cocos2d
 		int getHighestChildZ(void);
 
 		CCSceneDelegate* m_pDelegate;
-	};
-
-	class CCTransitionEaseScene
-	{
-	public:
-		virtual CCActionInterval * easeActionWithAction(CCActionInterval * action) = 0;
 	};
 
 	// CCSceneTransitionDelegate
@@ -3879,6 +3745,13 @@ namespace cocos2d
 	protected:
 		float m_elapsed;
 		bool   m_bFirstTick;
+	};
+
+
+	class CCTransitionEaseScene
+	{
+	public:
+		virtual CCActionInterval * easeActionWithAction(CCActionInterval * action) = 0;
 	};
 	
 
@@ -6773,6 +6646,137 @@ namespace cocos2d
 			virtual ~CCSortableObject() {}
 			virtual void setObjectID(unsigned int objectID) = 0;
 			virtual unsigned int getObjectID() = 0;
+		};
+
+
+		class CCScrollView;
+
+
+		class CCScrollViewDelegate
+		{
+		public:
+			virtual ~CCScrollViewDelegate() {}
+			virtual void scrollViewDidScroll(CCScrollView* view) = 0;
+			virtual void scrollViewDidZoom(CCScrollView* view) = 0;
+		};
+
+
+		class CCScrollView : public CCLayer
+		{
+		public:
+			CCScrollView();
+			virtual ~CCScrollView();
+
+			bool init();
+			virtual void registerWithTouchDispatcher();
+
+			static CCScrollView* create(CCSize size, CCNode* container = NULL);
+
+			static CCScrollView* create();
+
+			bool initWithViewSize(CCSize size, CCNode* container = NULL);
+
+			void setContentOffset(CCPoint offset, bool animated = false);
+			CCPoint getContentOffset();
+			void setContentOffsetInDuration(CCPoint offset, float dt);
+
+			void setZoomScale(float s);
+			void setZoomScale(float s, bool animated);
+
+			float getZoomScale();
+
+			void setZoomScaleInDuration(float s, float dt);
+			CCPoint minContainerOffset();
+			CCPoint maxContainerOffset();
+			bool isNodeVisible(CCNode * node);
+			void pause(CCObject* sender);
+			void resume(CCObject* sender);
+
+
+			bool isDragging() {return m_bDragging;}
+			bool isTouchMoved() { return m_bTouchMoved; }
+			bool isBounceable() { return m_bBounceable; }
+			void setBounceable(bool bBounceable) { m_bBounceable = bBounceable; }
+
+			CCSize getViewSize() { return m_tViewSize; }
+			void setViewSize(CCSize size);
+
+			CCNode * getContainer();
+			void setContainer(CCNode * pContainer);
+
+			CCScrollViewDirection getDirection() { return m_eDirection; }
+			virtual void setDirection(CCScrollViewDirection eDirection) { m_eDirection = eDirection; }
+
+			CCScrollViewDelegate* getDelegate() { return m_pDelegate; }
+			void setDelegate(CCScrollViewDelegate* pDelegate) { m_pDelegate = pDelegate; }
+
+			/** override functions */
+			// optional
+			virtual bool ccTouchBegan(CCTouch *pTouch, CCEvent *pEvent);
+			virtual void ccTouchMoved(CCTouch *pTouch, CCEvent *pEvent);
+			virtual void ccTouchEnded(CCTouch *pTouch, CCEvent *pEvent);
+			virtual void ccTouchCancelled(CCTouch *pTouch, CCEvent *pEvent);
+
+			virtual void setContentSize(const CCSize & size);
+			virtual const CCSize& getContentSize() const;
+
+			void updateInset();
+			bool isClippingToBounds() { return m_bClippingToBounds; }
+			void setClippingToBounds(bool bClippingToBounds) { m_bClippingToBounds = bClippingToBounds; }
+			virtual void visit();
+			virtual void addChild(CCNode * child, int zOrder, int tag);
+			virtual void addChild(CCNode * child, int zOrder);
+			virtual void addChild(CCNode * child);
+			void setTouchEnabled(bool e);
+		private:
+			void relocateContainer(bool animated);
+			void deaccelerateScrolling(float dt);
+			void performedAnimatedScroll(float dt);
+			void stoppedAnimatedScroll(CCNode* node);
+			void beforeDraw();
+			void afterDraw();
+			void handleZoom();
+
+		protected:
+			CCRect getViewRect();
+		public:
+			float m_fZoomScale;
+			float m_fMinZoomScale;
+			float m_fMaxZoomScale;
+			CCScrollViewDelegate* m_pDelegate;
+
+			CCScrollViewDirection m_eDirection;
+			bool m_bDragging;
+
+			CCPoint m_tContentOffset;
+
+			CCNode* m_pContainer;
+			bool m_bTouchMoved;
+			CCPoint m_fMaxInset;
+			CCPoint m_fMinInset;
+			bool m_bBounceable;
+
+			bool m_bClippingToBounds;
+
+			CCPoint m_tScrollDistance;
+			CCPoint m_tTouchPoint;
+			float m_fTouchLength;
+			CCArray* m_pTouches;
+			CCSize m_tViewSize;
+			float m_fMinScale, m_fMaxScale;
+			CCRect m_tParentScissorRect;
+			bool m_bScissorRestored;
+		public:
+			enum ScrollViewScriptEventType
+			{
+				kScrollViewScroll   = 0,
+				kScrollViewZoom,
+			};
+			void registerScriptHandler(int nFunID,int nScriptEventType);
+			void unregisterScriptHandler(int nScriptEventType);
+			int  getScriptHandler(int nScriptEventType);
+		public:
+			std::map<int,int> m_mapScriptHandler;
 		};
 
 
