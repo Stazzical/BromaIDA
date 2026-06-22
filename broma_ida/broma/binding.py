@@ -241,8 +241,11 @@ class Binding(FunctionSignature):
             return self.address == other
         elif isinstance(other, str):
             return self.qualified_name == other
-        elif is_dataclass(other):
-            return self.__dataclass_fields__ == other.__dataclass_fields__
+        elif isinstance(other, Binding):
+            return (
+                self.signature == other.signature
+                and self.address == other.address
+            )
 
         return NotImplemented
 
