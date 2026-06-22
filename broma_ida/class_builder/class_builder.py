@@ -134,10 +134,10 @@ class STLClassBuilder:
         if len(self.stl_types[0]) == 0:
             return ""
 
-        body = "class __BromaSTLTypesPtr {\n"
+        body = "class __BromaSTLTypesPtr {\npublic:\n"
 
         for member in self.stl_types[0]:
-            body += f"\t{member}\n"
+            body += f"\t{member};\n"
 
         body += "};\n"
 
@@ -147,7 +147,7 @@ class STLClassBuilder:
         if len(self.stl_types[1]) == 0:
             return ""
 
-        body = "class __BromaSTLTypesValue {\n"
+        body = "class __BromaSTLTypesValue {\npublic:\n"
 
         for member in self.stl_types[1]:
             body += f"\t{member};\n"
