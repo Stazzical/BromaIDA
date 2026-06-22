@@ -1,5 +1,7 @@
 from ida_kernwin import warning as ida_warning, Form
 
+from broma_ida.metadata import PLUGIN_NAME
+
 from broma_ida.ui.types.dynamic_form import DynamicForm
 
 from broma_ida.utils import path_exists
@@ -18,7 +20,7 @@ class DirectoryInputForm(DynamicForm):
         super().__init__(f"""STARTITEM 0
 BUTTON YES Done
 BUTTON CANCEL Cancel
-BromaIDA
+{PLUGIN_NAME}
 {{FormChangeCb}}<{prompt}:{{iDir}}>""", {
             "FormChangeCb": Form.FormChangeCb(self.onFormChange),
             "iDir": Form.DirInput(swidth=35)
@@ -28,7 +30,7 @@ BromaIDA
         super().onFormChange(fid)
 
         if fid == -2:
-            if not path_exists(self.GetControlValue(self.iDir)):
+            if not path_exists(self.GetControlValue(self.iDir)): # type: ignore
                 ida_warning("Please select a valid folder!")
                 return 0
 

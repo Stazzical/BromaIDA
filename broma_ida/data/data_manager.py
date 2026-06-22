@@ -5,9 +5,7 @@ import shelve
 
 
 class DataManager:
-    """
-    Manages saved data. This class is a singleton.
-    """
+    """Manages saved data. This class is a singleton."""
 
     __default_argument = object()
 
@@ -24,7 +22,7 @@ class DataManager:
         return cls._DataManager__instance  # type: ignore[misc]
 
     def _init_values(self):
-        """Initializes DataManager's default values"""
+        """Initializes DataManager's default values."""
         try:
             self.get("always_overwrite_merge_information", True)
             self.get("disable_broma_hash_check", False)
@@ -47,7 +45,8 @@ class DataManager:
             self._init_values()
 
     def init(self, filepath: Path):
-        """Initializes a DataManager instance.
+        """
+        Initializes a DataManager instance.
 
         Args:
             filepath (Path): Path to the shelf file
@@ -70,11 +69,12 @@ class DataManager:
             self._init_values()
 
     def sync(self):
-        """Manually syncs changes to the shelf"""
+        """Manually syncs changes to the shelf."""
         self.__shelf.sync()
 
     def has(self, key: str) -> bool:
-        """Checks if the shelf has a certain key
+        """
+        Checks if the shelf has the given key.
 
         Args:
             key (str)
@@ -85,8 +85,10 @@ class DataManager:
         return key in self.__shelf
 
     def get(self, key: str, default: Any = __default_argument) -> Any:
-        """Safely gets data from the shelf.
-        Populates the key with default and returns it if the key doesnt exist.
+        """
+        Safely gets data from the shelf.
+        Populates the key with the default and
+        returns it if the key doesnt exist.
 
         Args:
             key (str): The key name
@@ -103,7 +105,8 @@ class DataManager:
             return default
 
     def set(self, key: str, value: Any):
-        """Sets a key to a value in the shelf.
+        """
+        Sets a key to a value in the shelf.
 
         Args:
             key (str)
@@ -125,6 +128,6 @@ class DataManager:
             self.__shelf = None  # type: ignore[assignment]
 
     def _delete_shelf(self):
-        """Deletes the shelf"""
+        """Deletes the shelf."""
         for suffix in (".bak", ".dat", ".dir"):
             self.__shelf_path.with_suffix(suffix).unlink(True)

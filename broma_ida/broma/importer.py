@@ -35,7 +35,7 @@ from hashlib import file_digest
 
 from pybroma import Root, Class
 
-from broma_ida.broma.argtype import ArgType, RetType, STLUtils
+from broma_ida.broma.argtype import STLUtils, ArgType, RetType
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.codegen import BromaCodegen
@@ -89,7 +89,7 @@ class BIUtils:
         update: bool = False
     ) -> ida_tinfo_t | None:
         """
-        Gets the info about a type/struct
+        Gets the info about a type/struct.
 
         Args:
             name (str): The name of the type/struct
@@ -136,6 +136,10 @@ class BIUtils:
     
     @staticmethod
     def verify_stl_structs() -> bool:
+        """
+        Verifies the importation of the dynamically
+        generated STL type structs.
+        """
         ptr = BIUtils.get_type_info("__BromaSTLTypesPtr")
         value = BIUtils.get_type_info("__BromaSTLTypesValue")
 
@@ -150,7 +154,7 @@ class BIUtils:
     @staticmethod
     def verify_types() -> bool:
         """
-        Verifies the existence and size of types.
+        Verifies the existence of imported BromaIDA types.
 
         Returns:
             bool: True on success
@@ -224,7 +228,7 @@ class BIUtils:
     def prompt_invalid_dir(input_str: str, dm_key: str):
         """
         Shows a warning and prompts the user to input a valid directory.
-        Saves the directory to the DataManager
+        Saves the directory to the DataManager.
 
         Args:
             input_str (str)
@@ -247,7 +251,7 @@ class BIUtils:
 
     @staticmethod
     def move_type_entries_to_bromaida() -> None:
-        """Moves imported type entries to /BromaIDA in the local types tree."""
+        """Moves imported type entries to '/BromaIDA' in the Local Types tree."""
         dirtree = get_std_dirtree(DIRTREE_LOCAL_TYPES)
         entries = IDAUtils.get_dirtree_entries(
             DIRTREE_LOCAL_TYPES, "/"
@@ -270,7 +274,7 @@ class BIUtils:
     @staticmethod
     def dirtree_is_bromaida_entry(de: ida_direntry_t, ep: str) -> bool:
         """
-        Predicate to check if a dirtree entry is in /BromaIDA
+        Predicate to check if a dirtree entry is in '/BromaIDA'.
 
         Args:
             de (ida_direntry_t)
@@ -650,7 +654,8 @@ class BromaImporter:
         )
 
     def __init__(self, platform: BROMA_PLATFORMS, filepath: Path):
-        """Initializes a BromaImporter instance
+        """
+        Initializes a BromaImporter instance.
 
         Args:
             platform (BROMA_PLATFORMS): The target platform
@@ -678,9 +683,10 @@ class BromaImporter:
             import_types = False
 
         self._load_broma_classes()
+        self._load_broma_bindings()
 
-        # Hash check for bindings
         if import_types:
+            # Hash check for bindings
             if not DataManager().get("disable_broma_hash_check"):
                 cur_hash: str = ""
                 for bfile in self._broma_files.keys():
@@ -753,10 +759,8 @@ class BromaImporter:
                     DIRTREE_LOCAL_TYPES, "/BromaIDA"
                 )) != 0
 
-        self._load_broma_bindings()
-
-        if HAS_IDACLANG and import_types and self._has_types:
-            self._post_import_types()
+            if self._has_types:
+                self._post_import_types()
 
         print(
             f"\n\n[+] BromaImporter: Read {len(self.bindings)} "

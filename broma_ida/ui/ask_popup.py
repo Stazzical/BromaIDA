@@ -26,7 +26,8 @@ class AskPopup:
     """The default option. Defaults to 1 (button1)."""
 
     def show(self) -> int:
-        """Shows the popup.
+        """
+        Shows the popup.
 
         Returns:
             int: The selected button.

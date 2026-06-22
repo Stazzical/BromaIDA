@@ -13,7 +13,7 @@ _SKIPPED_CONTROLS = (_Form.FormChangeCb, _Form.ButtonInput)
 
 
 class DynamicFormControls:
-    """This class's members are added dynamically"""
+    """This class's members are added dynamically."""
 
     def add_control(self, name: str, value: _Any):
         self.__setattr__(name, value)
@@ -40,7 +40,7 @@ class DynamicForm(_Form):
         super().__init__(form, controls)
 
     def __save_controls(self):
-        """Saves the controls from Form.__controls."""
+        """Saves the controls from `Form.__controls`."""
         for name, ctrl in self.controls.items():
             if isinstance(ctrl, _SKIPPED_CONTROLS):
                 continue
@@ -48,7 +48,8 @@ class DynamicForm(_Form):
             self.save_control(name, ctrl)
 
     def save_control(self, name: str, control: _Form.Control):
-        """Saves a control's value.
+        """
+        Saves a control's value.
 
         Args:
             name (str): The control's name
@@ -77,7 +78,8 @@ class DynamicForm(_Form):
             self.saved_controls.add_control(name, value)
 
     def onFormChange(self, fid: int) -> int:
-        """The form change callback.
+        """
+        The form change callback.
         If no FormChangeCb is provided, this one is injected.
         If you override call the original so controls save their actual state.
 
@@ -92,13 +94,14 @@ class DynamicForm(_Form):
         return 1
 
     def setup(self):
-        """Invoked after the Form is Compiled"""
+        """Invoked after the Form is compiled."""
 
     def show(self) -> int:
-        """Displays the form and then frees its resources after it's closed
+        """
+        Displays the form and then frees its resources after it's closed.
 
         Returns:
-            int: return code of the form
+            int: Return code of the form
         """
         # In case a FormChangeCb isn't provided, we need to inject ours
         # early on in Compile()'s execution, so we recreate it
