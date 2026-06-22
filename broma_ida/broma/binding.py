@@ -35,6 +35,8 @@ class FunctionSignature:
         # get address as an int at base of 16 (hexadecimal int)
         # here we only use it to know if the function was inlined
         # on the target platform
+
+        # -2 is explicitly inlined, -1 is missing
         raw_addr = getattr(
             f.binds,
             IDAUtils.get_platform(),
@@ -52,7 +54,7 @@ class FunctionSignature:
             is_virtual=proto.is_virtual,
             is_static=proto.is_static,
             is_const=proto.is_const,
-            is_inline=(raw_addr == 0)
+            is_inline=(raw_addr <= -1)
         )
 
     @property
@@ -201,7 +203,7 @@ class Binding(FunctionSignature):
             is_virtual=proto.is_virtual,
             is_static=proto.is_static,
             is_const=proto.is_const,
-            is_inline=(raw_addr == 0),
+            is_inline=(raw_addr <= -1),
             address=raw_addr
         )
 
