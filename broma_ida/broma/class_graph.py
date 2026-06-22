@@ -111,12 +111,40 @@ class ClassGraph:
                     if bare in self._namespace_prefixes:
                         continue
 
-                    if bare_pos is not None and bare_pos > class_pos and \
-                            bare not in seen:
+                    needs_fwd = (
+                        bare in self.stl_forward_declarations or
+                        (
+                            bare_pos is not None
+                            and bare_pos > class_pos
+                            and bare not in seen
+                        )
+                    )
+
+                    if needs_fwd:
                         seen.add(bare)
                         fwd_needed.append(bare)
 
         return fwd_needed
+
+    @property
+    def stl_forward_declarations(self):
+        stl_fwd_needed = set()
+
+        for fields in self._type_refs.values():
+            for type, entries in fields.items():
+                if "std::" not in type:
+                    continue
+
+                for bare, by_value in entries:
+                    if by_value:
+                        continue
+                    if bare in self._namespace_prefixes:
+                        continue
+
+                    if bare in self._classes:
+                        stl_fwd_needed.add(bare)
+
+        return stl_fwd_needed
 
     @property
     def stl_type_definitions(self) -> tuple[list[str], list[str]]:
