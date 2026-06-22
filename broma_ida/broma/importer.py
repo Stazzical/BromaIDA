@@ -563,7 +563,8 @@ class BromaImporter:
                         -1
                     )
 
-                    if func_addr == -1:
+                    # -2 is explicitly inlined, -1 is missing
+                    if func_addr == -1 or func_addr == -2:
                         continue
 
                     function = function_field.prototype

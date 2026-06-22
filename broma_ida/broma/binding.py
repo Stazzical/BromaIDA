@@ -24,6 +24,7 @@ class FunctionSignature:
     is_static: bool = False
     is_const: bool = False
     is_inline: bool = False
+    is_missing: bool = False
     
     @classmethod
     def from_field(
@@ -54,7 +55,8 @@ class FunctionSignature:
             is_virtual=proto.is_virtual,
             is_static=proto.is_static,
             is_const=proto.is_const,
-            is_inline=(raw_addr <= -1)
+            is_inline=(raw_addr == -2),
+            is_missing=(raw_addr == -1)
         )
 
     @property
@@ -203,9 +205,15 @@ class Binding(FunctionSignature):
             is_virtual=proto.is_virtual,
             is_static=proto.is_static,
             is_const=proto.is_const,
-            is_inline=(raw_addr <= -1),
+            is_inline=(raw_addr == -2),
+            is_missing=(raw_addr == -1),
             address=raw_addr
         )
+
+    @property
+    def has_address(self) -> bool:
+        """True if the binding is not missing or inlined."""
+        return not self.is_inline and not self.is_missing
 
     @property
     def short_info(self) -> str:
