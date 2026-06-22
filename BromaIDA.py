@@ -1,32 +1,27 @@
-# flake8-in-file-ignores: noqa: E402
 from pathlib import Path
 
 from idaapi import (
-    msg as ida_msg, register_action, unregister_action,
+    msg as ida_msg,
     plugin_t as ida_plugin_t, action_desc_t as ida_action_desc_t,
     PLUGIN_PROC, PLUGIN_KEEP
 )
 from ida_kernwin import ask_file
 from idautils import Names
-from ida_nalt import get_root_filename
 
+from broma_ida.metadata import (
+    SCRIPT_VERSION,
+    PLUGIN_NAME,
+    PLUGIN_HOTKEY
+)
 from broma_ida.utils import stop, path_exists, IDAUtils
 from broma_ida.broma.importer import BromaImporter
 from broma_ida.broma.exporter import BromaExporter
-from broma_ida.ida_ctx_entry import IDACtxEntry
 
 from broma_ida.data.data_manager import DataManager
 
 from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.main_form import MainForm
 from broma_ida.ui.directory_input_form import DirectoryInputForm
-
-
-VERSION = IDAUtils.SCRIPT_VERSION = "7.3.1"
-__AUTHOR__ = "SpaghettDev"
-
-PLUGIN_NAME = "BromaIDA"
-PLUGIN_HOTKEY = "Ctrl+Shift+B"
 
 
 def on_import(form: MainForm, code: int = 0):
@@ -93,7 +88,7 @@ def on_export(form: MainForm, code: int = 0):
 
 
 def bida_main():
-    """BromaIDA main entrypoint"""
+    """BromaIDA main entrypoint."""
     DataManager().init(
         Path.home() / "broma_ida" / "shelf"
     )
@@ -110,30 +105,25 @@ def bida_main():
 
 
 class BromaIDAPlugin(ida_plugin_t):
-    """BromaIDA Plugin"""
+    """BromaIDA plugin."""
     flags = PLUGIN_PROC
     comment = "Broma support for IDA."
-    help = f"{PLUGIN_HOTKEY} to start the importing/exporting."
+    help = f"{PLUGIN_HOTKEY} to begin importing/exporting bindings."
     wanted_name = PLUGIN_NAME
-
-    ACTION_BTIDA = "bida:run_bida"
-    ACTION_DESC = "Launches the BromaIDA plugin."
+    wanted_hotkey = PLUGIN_HOTKEY
 
     def init(self):
-        """Ran on plugin load"""
-        self._register_action()
-        ida_msg(f"{PLUGIN_NAME} v{VERSION} initialized\n")
+        """Ran on plugin load."""
+        ida_msg(f"{PLUGIN_NAME} v{SCRIPT_VERSION} initialized\n")
 
         return PLUGIN_KEEP
 
     def term(self):
-        """Ran on plugin unload"""
-        self._unregister_action()
-
-        ida_msg(f"{PLUGIN_NAME} v{VERSION} unloaded\n")
+        """Ran on plugin unload."""
+        ida_msg(f"{PLUGIN_NAME} v{SCRIPT_VERSION} unloaded\n")
 
     def run(self, arg):
-        """Ran on "File -> Script File" (shocker)
+        """Ran on "File -> Script File"
         (does not work because this plugin has multiple py files)"""
         try:
             bida_main()
@@ -141,22 +131,6 @@ class BromaIDAPlugin(ida_plugin_t):
             pass
         except BaseException as e:
             ida_msg(f"[!] BromaIDA: Fatal error: {e}\n")
-
-    def _register_action(self):
-        """Registers BromaIDA's hotkey"""
-        hotkey = ida_action_desc_t(
-            self.ACTION_BTIDA,
-            "BromaIDA",
-            IDACtxEntry(bida_main),
-            PLUGIN_HOTKEY,
-            self.ACTION_DESC
-        )
-
-        register_action(hotkey)
-
-    def _unregister_action(self):
-        """Unregisters BromaIDA's hotkey"""
-        unregister_action(self.ACTION_BTIDA)
 
 
 def PLUGIN_ENTRY():

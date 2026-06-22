@@ -102,9 +102,6 @@ class IDAUtils:
 
     IDA_VERSION: int = IDA_SDK_VERSION
 
-    # set in BromaIDA.py
-    SCRIPT_VERSION: str
-
     class DirtreeCollector(ida_dirtree_visitor_t):
         def __init__(self, tree: TreeType, path: str, top: bool = True):
             ida_dirtree_visitor_t.__init__(self)
@@ -174,7 +171,8 @@ class IDAUtils:
 
     @staticmethod
     def __get_minimum_mach_o_os_version() -> int:
-        """Internal. Gets the Minimum OS Version struct from the Mach-O header
+        """
+        Internal. Gets the Minimum OS Version struct from the Mach-O header
 
         Returns:
             int: -1 if it couldn't find MOSV load command
@@ -215,7 +213,9 @@ class IDAUtils:
     @staticmethod
     @cache
     def get_platform() -> BROMA_PLATFORMS:
-        """Gets the binary's platform
+        """
+        Gets the currently open binary's target platform.
+
         Returns:
             BROMA_PLATFORMS
         """
@@ -257,7 +257,9 @@ class IDAUtils:
     @staticmethod
     @cache
     def get_platform_printable() -> str:
-        """Printable platform name
+        """
+        Printable platform name.
+
         Returns:
             str
         """
@@ -266,7 +268,8 @@ class IDAUtils:
     @staticmethod
     @cache
     def get_idb_sha256() -> str:
-        """Gets a unique sha256 of the IDB.
+        """
+        Gets a unique SHA-256 of the IDB.
         The hash's input is "[full path of the IDB]-[binary's md5]".
 
         Returns:
@@ -282,7 +285,8 @@ class IDAUtils:
     @staticmethod
     @cache
     def get_srclang_parser() -> str:
-        """Gets the current source language parser name.
+        """
+        Gets the current source language parser name.
 
         Returns:
             str
@@ -295,7 +299,8 @@ class IDAUtils:
     @staticmethod
     @cache
     def get_thunk_size() -> tuple[int] | tuple[int, int]:
-        """Gets the size of a jump thunk in the current binary
+        """
+        Gets the size of a jump thunk in the current binary.
 
         Returns:
             int
@@ -314,17 +319,20 @@ class IDAUtils:
 
     @staticmethod
     def rename_func(addr: int, name: str, max: int = 10) -> bool:
-        """Renames the addr. Accounts for overloads by appending _X
-        where X is a number between 1 and max (exclusive)
+        """
+        Renames the function at the given address with `name`.
+        Accounts for overloads by appending _X
+        where X is a number between 1 and max (exclusive).
 
         Args:
             addr (int): The address to rename
             name (str): The name to give it
-            max (int, optional): Maximum number of retires. Defaults to 10.
+            max (int, optional): Maximum number of retires.
+                Defaults to 10.
 
         Returns:
             bool: True if the address has been renamed successfully
-            after max trues
+                after max trues.
         """
         renamed = False
 
@@ -356,7 +364,8 @@ class IDAUtils:
 
     @staticmethod
     def get_ida_path(path: str) -> Path:
-        """Gets a path relative to the IDA root folder
+        """
+        Gets a path relative to the IDA root folder.
 
         Returns:
             Path: The path as a pathlib.Path
@@ -365,19 +374,20 @@ class IDAUtils:
 
     @staticmethod
     def get_function_info(
-            ida_ea: int,
-            force: bool = False
+        ida_ea: int,
+        force: bool = False
     ) -> ida_func_type_data_t:
-        """Gets the info about a function
+        """
+        Gets the info of the function at the given address.
 
         Args:
             ida_ea (int): The function address
-            force (bool, optional): Should the data be forcefully gotten.
-                Forces a decompilation of ida_ea. Defaults to False.
+            force (bool, optional): If the data should be forcefully obtained.
+                Forces a decompilation of `ida_ea`. Defaults to `False`.
 
         Returns:
-            ida_func_type_data_t: The func_type_data_t of the function.
-            Returns None only if the function is too big to decompile
+            ida_func_type_data_t: The `func_type_data_t` of the function.
+                Returns `None` only if the function is too big to decompile.
         """
         tif = ida_tinfo_t()
         func_info = ida_func_type_data_t()
@@ -404,11 +414,12 @@ class IDAUtils:
 
     @staticmethod
     def is_library_function(func: ida_func_t) -> bool:
-        """Checks if a function is a library function.
+        """
+        Checks if a function is a library function.
         Has some heuristics to detect false library functions.
 
         Args:
-            func (ida_func_t): The function to check
+            func (ida_func_t): The function to check.
 
         Returns:
             bool
@@ -432,9 +443,10 @@ class IDAUtils:
 
     @staticmethod
     def get_dirtree_entries(
-            tree: TreeType, path: str = "/"
+        tree: TreeType, path: str = "/"
     ) -> list[DirtreeEntry]:
-        """Gets the entries of a tree (dirtree_id_t)
+        """
+        Gets the entries of a dirtree (`dirtree_id_t`)
 
         Args:
             tree (int | ida_dirtree_t): The dirtree to get entries from
@@ -452,24 +464,25 @@ class IDAUtils:
 
     @staticmethod
     def visit_dirtree(
-            tree: TreeType,
-            predicate: Callable[[ida_direntry_t, str], bool],
-            visit: Callable[[ida_direntry_t, str], bool],
-            path: str = "/"
+        tree: TreeType,
+        predicate: Callable[[ida_direntry_t, str], bool],
+        visit: Callable[[ida_direntry_t, str], bool],
+        path: str = "/"
     ) -> list[DirtreeEntry]:
-        """Visits dirtree entries and executes a function on them
-        if they satisfy a predicate
+        """
+        Visits dirtree entries and executes a function on them
+        if they satisfy a predicate.
 
         Args:
-            tree (int | ida_dirtree_t): The dirtree to get entries from
+            tree (int | ida_dirtree_t): The dirtree to get entries from.
             predicate (Callable[[ida_direntry_t, str], bool]):
-                The predicate to test entries with
+                The predicate to test entries with.
             visit (Callable[[ida_direntry_t, str], bool]):
-                The function to execute on entries that satisfy the predicate
+                The function to execute on entries that satisfy the predicate.
 
         Returns:
             list[tuple[ida_direntry_t, str]]:
-                List of tuples containing the direntry and path of failed entries
+                List of tuples containing the direntry and path of failed entries.
         """  # noqa: E501
         tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
 
@@ -478,12 +491,12 @@ class IDAUtils:
 
     @staticmethod
     def get_entry_abspath(tree: TreeType, entry: ida_direntry_t) -> str:
-        """Gets the absolute path of the current IDA dirtree entry
-        absolutely wtf ida
+        """
+        Gets the absolute path of the current IDA dirtree entry.
 
         Args:
-            tree (int | ida_dirtree_t): The dirtree of the entry
-            entry (ida_direntry_t): The entry to get the path of
+            tree (int | ida_dirtree_t): The dirtree of the entry.
+            entry (ida_direntry_t): The entry to get the path of.
 
         Returns:
             str
@@ -493,15 +506,16 @@ class IDAUtils:
 
     @staticmethod
     def chdir_dirtree_entries(
-            tree: TreeType, path: str, entries: list[DirtreeEntry]
+        tree: TreeType, path: str, entries: list[DirtreeEntry]
     ) -> None:
-        """Changes the directory of dirtree entries to a new path
+        """
+        Changes the directory of dirtree entries to a new path.
 
         Args:
-            tree (int): The dirtree of the entries
-            path (str): The new path inside the tree
+            tree (int): The dirtree of the entries.
+            path (str): The new path inside the tree.
             entries (list[tuple[ida_dirtree_cursor_t, ida_direntry_t]]):
-                The entries to change directory
+                The entries to change directory.
         """
         tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
 
