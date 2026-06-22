@@ -35,9 +35,10 @@ class FunctionSignature:
         # get address as an int at base of 16 (hexadecimal int)
         # here we only use it to know if the function was inlined
         # on the target platform
-        raw_addr = int(
-            getattr(f.binds, IDAUtils.get_platform(), -1), # type: ignore
-            16
+        raw_addr = getattr(
+            f.binds,
+            IDAUtils.get_platform(),
+            -1
         )
 
         return cls(
@@ -77,16 +78,6 @@ class FunctionSignature:
             "~", "~" if is_visible_cp(ord("~")) else "d"
         )
 
-    @cached_property
-    def signature(self) -> str:
-        """C++ function signature string."""
-        # IDA drops const declaration for methods
-        return (
-            f"{'static ' if self.is_static else ''}"
-            f"{'virtual ' if self.is_virtual else ''}"
-            f"{self.ret.type} {self.ida_qualified_name}({self.get_args_str()});"
-        )
-
     @property
     def has_stl_args(self) -> bool:
         """
@@ -120,22 +111,24 @@ class FunctionSignature:
         """
         return self.has_stl_args or self.has_stl_ret
 
-    @cache
     def get_args_str(
         self,
-        include_this_arg: bool = True
+        include_this_arg: bool = True,
+        expand_stl: bool = False
     ) -> str:
         """
-        Gets a function's argument string.
+        Gets a function's arguments signature string.
 
         Args:
             include_this_arg (bool, optional): Include the `this` argument.
                 Defaults to True.
+            expand_stl (bool, optional): Uses STL-expanded types instead
+                of normal ones. Defaults to False.
 
         Returns:
             str
         """
-        args = self.parameters
+        args = list(self.parameters)
 
         has_this_arg = (
             len(args) > 0
@@ -148,7 +141,11 @@ class FunctionSignature:
         elif has_this_arg:
             args = args[1:]
 
-        return ", ".join([str(arg) for arg in args])
+        return ", ".join([
+            arg.expanded_type if expand_stl
+            else str(arg)
+            for arg in args
+        ])
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, FunctionSignature):
@@ -164,7 +161,7 @@ class FunctionSignature:
             self.name,
             tuple(p.type for p in self.parameters)
         ))
-    
+
     def __str__(self) -> str:
         # this does NOT use qualified_name
         return (
@@ -187,9 +184,10 @@ class Binding(FunctionSignature):
         f: FunctionBindField
     ) -> Binding:
         proto = f.prototype
-        raw_addr = int(
-            getattr(f.binds, IDAUtils.get_platform(), -1), # type: ignore
-            16
+        raw_addr = getattr(
+            f.binds,
+            IDAUtils.get_platform(),
+            -1
         )
 
         return cls(
@@ -217,13 +215,24 @@ class Binding(FunctionSignature):
         """
         return f"{self.qualified_name} @ {hex(self.address)}"
 
-    def __eq__(self, value: object) -> bool:
-        if isinstance(value, int):
-            return self.address == value
-        elif isinstance(value, str):
-            return self.qualified_name == value
-        elif is_dataclass(value):
-            return self.__dataclass_fields__ == value.__dataclass_fields__
+    @property
+    def signature(self) -> str:
+        """C++ function signature string."""
+        # IDA drops const declaration for methods
+        return (
+            f"{'static ' if self.is_static else ''}"
+            f"{'virtual ' if self.is_virtual else ''}"
+            f"{self.ret.expanded_type} "
+            f"{self.ida_qualified_name}({self.get_args_str(expand_stl=True)});"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, int):
+            return self.address == other
+        elif isinstance(other, str):
+            return self.qualified_name == other
+        elif is_dataclass(other):
+            return self.__dataclass_fields__ == other.__dataclass_fields__
 
         return NotImplemented
 
@@ -238,9 +247,9 @@ class Binding(FunctionSignature):
         return (
             f"{'virtual ' if self.is_virtual else ''}"
             f"{'static ' if self.is_static else ''}"
-            f"{self.ret.type} "
+            f"{self.ret.expanded_type} "
             f"{self.class_name}::{self.name}"
-            f"({', '.join(str(arg) for arg in self.parameters)})"
+            f"({', '.join(arg.expanded_type for arg in self.parameters)})"
             f" @ {hex(self.address)}; "
             f"({self.ida_qualified_name})"
         )
