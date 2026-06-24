@@ -1,7 +1,7 @@
 from pybroma import Class
 
 from broma_ida.broma.class_graph import ClassGraph
-from broma_ida.broma.constants import BROMA_PLATFORMS
+from broma_ida.broma.constants import BROMA_PLATFORMS, BROMA_PLATFORM_GROUPS
 
 
 class ClassBuilder:
@@ -63,6 +63,17 @@ class ClassBuilder:
             pad_field = field.getAsPadField()
 
             if member_field is not None:
+                present = (
+                    len(member_field.platform) == 0
+                    or (
+                        str(self._target_platform) in member_field.platform
+                        or BROMA_PLATFORM_GROUPS.get(str(self._target_platform)) in member_field.platform
+                    )
+                )
+
+                if not present:
+                    continue
+
                 if has_left_functions:
                     body += "\n"
                     has_left_functions = False
@@ -74,7 +85,7 @@ class ClassBuilder:
                 } {member_field.name};\n"
 
             elif pad_field is not None:
-                # skip other members because no padding for current platform
+                # skip other members because no padding for current platform (why)
                 if self._target_platform not in \
                         pad_field.amount.platforms_as_dict():
                     break
