@@ -7,14 +7,15 @@ from pybroma import FunctionBindField
 
 from broma_ida.broma.argtype import ArgType, RetType
 from broma_ida.utils import IDAUtils
+from broma_ida.broma.constants import BROMA_PLATFORM_GROUPS
 
 
 @dataclass
 class FunctionSignature:
     """
     A container for the signature of a C++ function.
-    Includes the return type, and arguments as a list of
-    ArgType constructed classes.
+    Includes the return type as a `RetType`, and arguments
+    as a list of `ArgType` constructed classes.
     """
     name: str
     class_name: str
@@ -25,7 +26,7 @@ class FunctionSignature:
     is_const: bool = False
     is_inline: bool = False
     is_missing: bool = False
-    
+
     @classmethod
     def from_field(
         cls,
@@ -33,15 +34,20 @@ class FunctionSignature:
         f: FunctionBindField
     ) -> FunctionSignature:
         proto = f.prototype
+        platform = str(IDAUtils.get_platform())
         # get address as an int at base of 16 (hexadecimal int)
         # here we only use it to know if the function was inlined
-        # on the target platform
+        # or missing on the target platform
 
         # -2 is explicitly inlined, -1 is missing
         raw_addr = getattr(
             f.binds,
-            IDAUtils.get_platform(),
+            platform,
             -1
+        )
+        missing = (
+            platform in proto.attrs.missing
+            or BROMA_PLATFORM_GROUPS.get(platform) in proto.attrs.missing
         )
 
         return cls(
@@ -56,10 +62,10 @@ class FunctionSignature:
             is_static=proto.is_static,
             is_const=proto.is_const,
             is_inline=(raw_addr == -2),
-            is_missing=(raw_addr == -1)
+            is_missing=missing
         )
 
-    @property
+    @cached_property
     def qualified_name(self) -> str:
         """
         The qualified name of a binding.
@@ -82,7 +88,7 @@ class FunctionSignature:
             "~", "~" if is_visible_cp(ord("~")) else "d"
         )
 
-    @property
+    @cached_property
     def has_stl_args(self) -> bool:
         """
         True if any parameter contains a non-string STL type.
@@ -95,7 +101,7 @@ class FunctionSignature:
             for p in self.parameters
         )
 
-    @property
+    @cached_property
     def has_stl_ret(self) -> bool:
         """
         True if the return type is a non-string STL type.
@@ -107,7 +113,7 @@ class FunctionSignature:
             and self.ret.stripped_type != "std::string"
         )
 
-    @property
+    @cached_property
     def needs_stl_fixup(self) -> bool:
         """
         True if this signature requires the STL parameter
@@ -171,7 +177,8 @@ class FunctionSignature:
         return (
             f"{'static ' if self.is_static else ''}"
             f"{'virtual ' if self.is_virtual else ''}"
-            f"{self.ret.type} {self.name}({self.get_args_str(include_this_arg=False)})"
+            f"{self.ret.type + ' ' if self.ret.type else ''}"
+            f"{self.name}({self.get_args_str(include_this_arg=False)})"
             f"{' const;' if self.is_const else ';'}"
         )
 
@@ -188,10 +195,15 @@ class Binding(FunctionSignature):
         f: FunctionBindField
     ) -> Binding:
         proto = f.prototype
+        platform = str(IDAUtils.get_platform())
         raw_addr = getattr(
             f.binds,
-            IDAUtils.get_platform(),
+            platform,
             -1
+        )
+        missing = (
+            platform in proto.attrs.missing
+            or BROMA_PLATFORM_GROUPS.get(platform) in proto.attrs.missing
         )
 
         return cls(
@@ -206,16 +218,16 @@ class Binding(FunctionSignature):
             is_static=proto.is_static,
             is_const=proto.is_const,
             is_inline=(raw_addr == -2),
-            is_missing=(raw_addr == -1),
+            is_missing=missing,
             address=raw_addr
         )
 
-    @property
+    @cached_property
     def has_address(self) -> bool:
         """True if the binding is not missing or inlined."""
         return not self.is_inline and not self.is_missing
 
-    @property
+    @cached_property
     def short_info(self) -> str:
         """
         Short info about the binding.

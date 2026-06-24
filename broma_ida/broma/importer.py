@@ -36,7 +36,7 @@ from hashlib import file_digest
 from pybroma import Root, Class
 
 from broma_ida.broma.argtype import STLUtils, ArgType, RetType
-from broma_ida.broma.constants import BROMA_PLATFORMS
+from broma_ida.broma.constants import BROMA_PLATFORMS, BROMA_PLATFORM_GROUPS
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.codegen import BromaCodegen
 from broma_ida.utils import (
@@ -70,8 +70,8 @@ class BIUtils:
         "imac": "-target x86_64-apple-darwin",
         "m1":  "-target arm64-apple-darwin",
         "ios": "-target arm64-apple-darwin",
-        "android32":  "-target armv7-none-linux-androideabi -mfloat-abi=hard",
-        "android64": "-target aarch64-none-linux-android -mfloat-abi=hard"
+        "android32":  "-target armv7-none-linux-androideabi",
+        "android64": "-target aarch64-none-linux-android"
     }
 
     _plat_to_stl_name: dict[BROMA_PLATFORMS, str] = {
@@ -127,7 +127,7 @@ class BIUtils:
             bool: True on error
         """
         if t is None:
-            return False
+            return True
 
         if t.get_size() == BADADDR or t.is_forward_decl():
             return True
@@ -143,10 +143,8 @@ class BIUtils:
         ptr = BIUtils.get_type_info("__BromaSTLTypesPtr")
         value = BIUtils.get_type_info("__BromaSTLTypesValue")
 
-        if ptr is None or value is None:
-            return False
-
-        if ptr.is_forward_decl() or value.is_forward_decl():
+        if BIUtils.is_invalid_type(ptr) \
+            or BIUtils.is_invalid_type(value):
             return False
 
         return True
@@ -526,6 +524,14 @@ class BromaImporter:
     def _load_broma_classes(self):
         for bfile, root in self._broma_files.items():
             for cls in root.classes:
+                missing = (
+                    self._target_platform in cls.attrs.missing
+                    or BROMA_PLATFORM_GROUPS.get(self._target_platform) in cls.attrs.missing
+                )
+
+                if missing:
+                    continue
+
                 if cls.name in self.classes:
                     print(
                         "[!] BromaImporter: Duplicate class definition! "

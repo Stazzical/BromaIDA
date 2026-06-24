@@ -13,6 +13,9 @@ class ClassBuilder:
 
     # TODO: just make this do the parsing, make lists of members
     # and methods to be used in get_str for making the class instead
+    # unless there wouldn't be a use for them outside of string
+    # generation. do not emit empty string for no fields, emit 
+    # a forward declare instead.
     def _import_class(self):
         """
         Converts a Broma class to a C++ class
@@ -32,24 +35,21 @@ class ClassBuilder:
         has_left_functions = False
 
         for sig in self._graph.get_own_virtuals(self._broma_class.name):
-            # TODO: wait until pybroma exposes FunctionType for detecting
-            # and skipping constructors and destructors
-
-            # skip any inlined functions on the target platform
-            # they will simply clutter the generated vtables
-            # after parsing and cause shifts in the vtable sizes.
-
             # if Broma files had reliably defined inline functions
             # in the class definitions, the field could've been
             # gotten as an InlineField, which has a C++ string
             # defining the function fully (InlineField.inner).
             # regardless, this isn't very useful for type defining.
-            if sig.is_inline:
+
+            # supress any missing functions on the target platform.
+            # attributes from classes also fall-through and get
+            # applied to functions and members.
+            if sig.is_missing:
                 continue
 
-            # skip overriden functions introduced by the secondary superclasses.
-            # primary overrides (if not inlined) are still needed for the change
-            # in "this" argument's type for the function call
+            # supress overriden functions introduced by the secondary superclasses.
+            # primary overrides are still needed for the change
+            # in the "this" argument's type
             if self._graph.is_secondary_override(
                 self._broma_class, sig
             ):
