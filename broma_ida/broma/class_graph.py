@@ -1,3 +1,5 @@
+from functools import cached_property
+
 from pybroma import Class
 
 from broma_ida.broma.binding import FunctionSignature
@@ -82,7 +84,7 @@ class ClassGraph:
 
         return False
 
-    @property
+    @cached_property
     def forward_declarations(self) -> list[str]:
         """
         A `list` of classes needed to be declared
@@ -93,8 +95,8 @@ class ClassGraph:
             list[str]
         """
         position = {name: i for i, name in enumerate(self.class_order)}
-        fwd_needed: list[str] = []
-        seen: set[str] = set()
+        fwd_needed: list[str] = list(self.stl_forward_declarations)
+        seen: set[str] = set(self.stl_forward_declarations)
 
         # TODO: consider using a new class type for
         # type references indexing, this really sucks
@@ -102,22 +104,19 @@ class ClassGraph:
             class_pos = position.get(class_name, -1)
             for entries in self._type_refs[class_name].values():
                 for bare, by_value in entries:
-                    bare_pos = position.get(bare)
-
-                    if by_value:
-                        continue  # hard dep, emit_order handles it
-                    if bare not in self._classes:
-                        continue  # only classes we can actually define
-                    if bare in self._namespace_prefixes:
+                    if (
+                        by_value
+                        or bare not in self._classes
+                        or bare in self._namespace_prefixes
+                    ):
                         continue
 
+                    bare_pos = position.get(bare)
+
                     needs_fwd = (
-                        bare in self.stl_forward_declarations or
-                        (
-                            bare_pos is not None
-                            and bare_pos > class_pos
-                            and bare not in seen
-                        )
+                        bare_pos is not None
+                        and bare_pos > class_pos
+                        and bare not in seen
                     )
 
                     if needs_fwd:
@@ -126,8 +125,8 @@ class ClassGraph:
 
         return fwd_needed
 
-    @property
-    def stl_forward_declarations(self):
+    @cached_property
+    def stl_forward_declarations(self) -> set[str]:
         stl_fwd_needed = set()
 
         for fields in self._type_refs.values():
@@ -146,7 +145,7 @@ class ClassGraph:
 
         return stl_fwd_needed
 
-    @property
+    @cached_property
     def stl_type_definitions(self) -> tuple[list[str], list[str]]:
         """
         Retrieve the unexpanded STL types needed to be
