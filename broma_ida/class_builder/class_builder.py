@@ -47,10 +47,14 @@ class ClassBuilder:
             if sig.is_missing:
                 continue
 
-            # supress overriden functions introduced by the secondary superclasses.
-            # primary overrides are still needed for the change
-            # in the "this" argument's type
-            if self._graph.is_secondary_override(
+            # this is a hack. a very bad hack.
+            # it makes MSVC vtables work, somehow.
+            # it'll stay for now until a missing piece
+            # is in place, refer to IDA docs:
+            # https://docs.hex-rays.com/core/types/concepts/cpp-type-details
+            # it's not needed for Itanium ABI binaries.
+            # TODO: two-pass codegen to auto-generate secondary vtables in the type library
+            if self._target_platform == "win" and self._graph.is_secondary_override(
                 self._broma_class, sig
             ):
                 continue
