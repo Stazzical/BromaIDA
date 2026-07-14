@@ -32,14 +32,14 @@ class FunctionSignature:
         cls,
         class_name: str,
         f: FunctionBindField
-    ) -> FunctionSignature:
+    ) -> "FunctionSignature":
         proto = f.prototype
         platform = str(IDAUtils.get_platform())
         # get address as an int at base of 16 (hexadecimal int)
         # here we only use it to know if the function was inlined
         # or missing on the target platform
 
-        # -2 is explicitly inlined, -1 is missing
+        # -2 is explicitly inlined, -1 is not found
         raw_addr = getattr(
             f.binds,
             platform,
@@ -193,7 +193,7 @@ class Binding(FunctionSignature):
         cls,
         class_name: str,
         f: FunctionBindField
-    ) -> Binding:
+    ) -> "Binding":
         proto = f.prototype
         platform = str(IDAUtils.get_platform())
         raw_addr = getattr(
