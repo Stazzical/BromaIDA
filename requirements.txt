@@ -1,0 +1,2 @@
+--find-links https://github.com/prevter/PyBroma/releases/expanded_assets/v0.2.0
+pybroma==0.2.0
