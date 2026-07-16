@@ -2540,9 +2540,9 @@ namespace cocos2d
 	class CCKeyboardDelegate
 	{
 	public:
-		virtual void keyDown(enumKeyCodes key) {}
+		virtual void keyDown(enumKeyCodes key, double) {}
 
-		virtual void keyUp(enumKeyCodes key) {}
+		virtual void keyUp(enumKeyCodes key, double) {}
 	};
 
 	// @note RobTop Addition
@@ -2661,7 +2661,7 @@ namespace cocos2d
 		virtual void keyMenuClicked(void);
 		
 		// @note RobTop Addition
-		void keyDown(enumKeyCodes);
+		void keyDown(enumKeyCodes, double);
 
 		// 2.2 additions
 		virtual void setPreviousPriority(int);
