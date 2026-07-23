@@ -1,12 +1,17 @@
 from pathlib import Path
 
-from idaapi import (
-    msg as ida_msg,
-    plugin_t as ida_plugin_t, action_desc_t as ida_action_desc_t,
-    PLUGIN_PROC, PLUGIN_KEEP
+from ida_idaapi import (
+    plugin_t as ida_plugin_t,
+    PLUGIN_PROC as IDA_PLUGIN_PROC,
+    PLUGIN_KEEP as IDA_PLUGIN_KEEP
 )
-from ida_kernwin import ask_file
+from ida_kernwin import (
+    ask_file,
+    msg as ida_msg,
+    warning as ida_warning
+)
 from idautils import Names
+from ida_auto import auto_is_ok
 
 from broma_ida.metadata import (
     SCRIPT_VERSION,
@@ -24,11 +29,38 @@ from broma_ida.ui.main_form import MainForm
 from broma_ida.ui.directory_input_form import DirectoryInputForm
 
 
+def check_auto_analysis() -> bool:
+    """
+    Checks if IDA is done with analysis.
+    Emits a warning for the user to close the plugin,
+    since IDA runs plugins on main thread and stops
+    the auto-analysis from working.
+
+    Returns:
+        bool: True if safe, False if not.
+    """
+    if not auto_is_ok():
+        ida_warning(
+            "Warning: IDA analysis is still running!\n\n"
+            "Modifying database bindings mid-analysis can cause severe race conditions,\n"
+            "missing types and symbols, and potentially IDB database corruption!\n\n"
+            f"Please close {PLUGIN_NAME} and wait for the 'AU: idle' indicator\n"
+            "at the bottom-left corner of IDA to appear before running the plugin again."
+        )
+        return False
+
+    return True
+
+
 def on_import(form: MainForm, code: int = 0):
+    if not check_auto_analysis():
+        return
+
     form.Close(1)
 
     platform = IDAUtils.get_platform()
 
+    # do NOT add a colon at the end, they're special characters in forms
     dir_form = DirectoryInputForm("Select folder containing .bro files")
     ok = dir_form.show()
 
@@ -51,7 +83,11 @@ def on_import(form: MainForm, code: int = 0):
 
     DataManager().close()
 
+
 def on_export(form: MainForm, code: int = 0):
+    if not check_auto_analysis():
+        return
+
     form.Close(1)
 
     platform = IDAUtils.get_platform()
@@ -88,7 +124,7 @@ def on_export(form: MainForm, code: int = 0):
 
 
 def bida_main():
-    """BromaIDA main entrypoint."""
+    """Plugin main entrypoint."""
     DataManager().init(
         Path.home() / "broma_ida" / "shelf"
     )
@@ -105,10 +141,10 @@ def bida_main():
 
 
 class BromaIDAPlugin(ida_plugin_t):
-    """BromaIDA plugin."""
-    flags = PLUGIN_PROC
-    comment = "Broma support for IDA."
-    help = f"{PLUGIN_HOTKEY} to begin importing/exporting bindings."
+    """IDA plugin instance."""
+    flags = IDA_PLUGIN_PROC
+    comment = PLUGIN_DESCRIPTION
+    help = f"Press {PLUGIN_HOTKEY} to begin importing/exporting bindings."
     wanted_name = PLUGIN_NAME
     wanted_hotkey = PLUGIN_HOTKEY
 
@@ -116,7 +152,7 @@ class BromaIDAPlugin(ida_plugin_t):
         """Ran on plugin load."""
         ida_msg(f"{PLUGIN_NAME} v{SCRIPT_VERSION} initialized\n")
 
-        return PLUGIN_KEEP
+        return IDA_PLUGIN_KEEP
 
     def term(self):
         """Ran on plugin unload."""
@@ -133,5 +169,6 @@ class BromaIDAPlugin(ida_plugin_t):
             ida_msg(f"[!] BromaIDA: Fatal error: {e}\n")
 
 
+# IDA plugin entry
 def PLUGIN_ENTRY():
     return BromaIDAPlugin()
