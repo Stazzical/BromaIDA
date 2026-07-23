@@ -87,10 +87,6 @@ class ClassBuilder:
 
                 body += f"\tPAD({pad_amount});\n"
 
-        # TODO: superclasses contains 'depends'
-        # attribute's classes too as of now,
-        # we don't wanna add those to the bases
-        # if they're not actually a base.
         bases = ", ".join(
             f"public {cls}" for cls in self._broma_class.superclasses
         )
@@ -107,14 +103,14 @@ class ClassBuilder:
             self._class_str = (
                 f"{open_ns}\n"
                 f"class {bare_name}{inherit} {{"
-                f"{'\npublic:\n' + body if body is not '' else ''}"
+                f"{'\npublic:\n' + body if body != '' else ''}"
                 "};\n"
                 f"{close_ns}\n\n"
             )
         else:
             self._class_str = (
                 f"class {self._broma_class.name}{inherit} {{"
-                f"{'\npublic:\n' + body if body is not '' else ''}"
+                f"{'\npublic:\n' + body if body != '' else ''}"
                 "};\n\n"
             )
 

@@ -504,10 +504,10 @@ class BromaExporter:
     def export(self):
         """Exports the bindings to the file"""
         if not path.exists(self._filepath):
-            with open(self._filepath, "w"):
+            with open(self._filepath, "w", encoding="utf-8"):
                 pass
 
-        with open(self._filepath, "r") as fr, \
+        with open(self._filepath, "r", encoding="utf-8-sig") as fr, \
                 open(f"{self._filepath}.tmp", "w") as fw:
             current_class_name: str = ""
 

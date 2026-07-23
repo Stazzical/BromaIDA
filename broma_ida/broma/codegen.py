@@ -38,6 +38,7 @@ class BromaCodegen:
     _graph: ClassGraph
     _defined_classes: set[str]
     _enums_count: int
+    _header_classes_count: int
     _output_path: Path
 
     def _emit_class(
@@ -79,6 +80,9 @@ class BromaCodegen:
         headers_path: Path,
         broma_path: Path
     ):
+        self._enums_count: int = 0
+        self._header_classes_count: int = 0
+
         self._target_platform = platform
         self._classes = broma_classes
         self._graph = graph
@@ -109,6 +113,7 @@ class BromaCodegen:
         with open(
             self._file_path,
             "w",
+            encoding="utf-8",
             buffering = 10 * 1024 * 1024
         ) as f:
             # Set up values used in .hpp for platform-specific definitions
@@ -192,7 +197,7 @@ class BromaCodegen:
         print(
             "[+] BromaCodegen: Wrote type definitions from "
             f"{self._enums_count} enums from 'Enums.hpp', "
-            f"{len(self._defined_classes) - len(self._classes)} "
+            f"{self._header_classes_count} "
             "classes found from headers and "
             f"{len(self._classes)} Broma classes to "
             f"{self._file_path}"
@@ -223,7 +228,7 @@ class BromaCodegen:
         # detect if we have already passed an absolute path for the file
         src_path = Path(fname) if Path(fname).is_absolute() else (self._headers_path / fname).resolve()
 
-        with open(src_path) as fr:
+        with open(src_path, encoding="utf-8-sig") as fr:
             if not no_header_comment:
                 file.write(f"// {fname}\n")
 
@@ -254,10 +259,7 @@ class BromaCodegen:
             plat_to_macro_suffix[self._target_platform]
         }"""
 
-    def _list_class_definitions(
-        self,
-        fcontent: list[str]
-    ):
+    def _list_class_definitions(self, fcontent: list[str]):
         scopes: list[tuple[str, str, int]] = []
         pending_namespace: str | None = None
         brace_depth = 0
@@ -301,22 +303,19 @@ class BromaCodegen:
                         for scope_kind, scope_name, _ in scopes
                         if scope_kind == "namespace"
                     ]
+                    qualified = "::".join(namespaces + [name])
 
-                    self._defined_classes.add(
-                        "::".join(namespaces + [name])
-                    )
+                    if qualified not in self._defined_classes:
+                        self._header_classes_count += 1
 
-                scopes.append(
-                    (kind, name, brace_depth + 1)
-                )
+                    self._defined_classes.add(qualified)
+
+                scopes.append((kind, name, brace_depth + 1))
 
             brace_depth += line.count("{")
             brace_depth -= line.count("}")
 
-            while (
-                scopes
-                and brace_depth < scopes[-1][2]
-            ):
+            while scopes and brace_depth < scopes[-1][2]:
                 scopes.pop()
 
     def _filter_relative_includes(self, lines: list[str]) -> list[str]:
@@ -364,7 +363,7 @@ class BromaCodegen:
                 include_full_path = (base_dir / include_path).resolve()
 
                 try:
-                    with open(include_full_path) as fr:
+                    with open(include_full_path, encoding="utf-8-sig") as fr:
                         nested_lines = fr.readlines()
                 except FileNotFoundError:
                     print(

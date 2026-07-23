@@ -100,13 +100,10 @@ class VerifyUtils:
             return True
 
         if IDAUtils.is_corrupted_type(t):
-            print("corrupted type")
             return False
 
-        # TODO: fix before commit
         udt = ida_udt_type_data_t()
         if not t.get_udt_details(udt) or udt.size() != len(stub.members):
-            print(f"bad size: {udt.size()} {len(stub.members)}")
             return False
 
         for member, stlmember in zip(udt, stub.members):
@@ -125,9 +122,6 @@ class VerifyUtils:
             )
 
             if not VerifyUtils.stl_nodes_equivalent(ida_node, expected_node):
-                print("node mismatch")
-                print(ida_str)
-                print(expected_str)
                 return False
 
         return True
@@ -155,8 +149,8 @@ class VerifyUtils:
         """
         Verify if there are any mismatches between current
         STL structs from ClassGraph and any previously
-        importer ones.
-        Used to check before types are imported.
+        imported ones.
+        Used before types are imported.
 
         Args:
             defs (STLTypeDefinitions)
@@ -645,6 +639,10 @@ class BromaImporter:
 
             for bfile in self._broma_files.values():
                 for func in bfile.functions:
+                    raw_addr = getattr(func.binds, self._target_platform, -1)
+                    if raw_addr in (-1, -2):
+                        continue
+
                     self.bindings.append(
                         Binding.from_freefunc(func)
                     )
@@ -717,6 +715,10 @@ class BromaImporter:
 
         for bfile in self._broma_files.values():
             for func in bfile.functions:
+                raw_addr = getattr(func.binds, self._target_platform, -1)
+                if raw_addr in (-1, -2):
+                    continue
+
                 self.bindings.append(
                     Binding.from_freefunc(func)
                 )
@@ -834,7 +836,6 @@ class BromaImporter:
 
                 if type_prompt == ASKBTN_BTN2:
                     print("[!] BromaImporter: Types import cancelled by user for this time.")
-                    return False
                 elif type_prompt == ASKBTN_BTN3:
                     DataManager().set("import_types", False)
                     print("[!] BromaImporter: Types import cancelled and disabled by user.")
@@ -850,8 +851,12 @@ class BromaImporter:
                     print(
                         f"\n\n[+] BromaImporter: Successfully "
                         f"imported types from {len(self.classes)} "
-                        "Broma classes.\n\n"
+                        "Broma classes."
                     )
+                else:
+                    self.has_types = len(IDAUtils.get_dirtree_entries(
+                        DIRTREE_LOCAL_TYPES, "/BromaIDA"
+                    )) != 0
             else:
                 self.has_types = len(IDAUtils.get_dirtree_entries(
                     DIRTREE_LOCAL_TYPES, "/BromaIDA"
@@ -867,7 +872,7 @@ class BromaImporter:
             f"{IDAUtils.get_platform_printable()} bindings, "
             f"{len(self.duplicates)} duplicates "
             f"and {len(self._broma_files)} Broma files "
-            f"from {str(self._bromas_path)}\n\n"
+            f"from {str(self._bromas_path)}"
         )
 
     def import_types(self):
@@ -906,6 +911,9 @@ class BromaImporter:
         Imports the parsed bindings from the Broma files
         into the current IDB.
         """
+        total_bindings = len(self.bindings)
+        resolved_count = 0
+
         if self._target_platform.startswith("android"):
             if not self.has_types:
                 return
@@ -928,12 +936,23 @@ class BromaImporter:
                 if ida_ea == -0x1:
                     continue
 
+                resolved_count += 1
+
                 if BIUtils.has_mismatch(
                     IDAUtils.get_function_info(ida_ea),
                     binding
                 ):
+                    print(
+                        "[+] BromaImporter: Function signature mismatch between "
+                        f"Broma and IDB ({binding.short_info})! "
+                        "Attempting to correct..."
+                    )
                     BIUtils.set_function_signature(ida_ea, binding)
 
+            print(
+                f"[+] BromaImporter: Resolved {resolved_count}/"
+                f"{total_bindings} bindings from the Broma files."
+            )
             return
 
         # first, handle non-duplicates
@@ -989,6 +1008,8 @@ class BromaImporter:
                 )
                 continue
 
+            resolved_count += 1
+
             # types are needed because we can't
             # just apply one to any variable
             # without having it in the first place
@@ -996,6 +1017,11 @@ class BromaImporter:
                 IDAUtils.get_function_info(ida_ea),
                 binding
             ):
+                print(
+                    "[+] BromaImporter: Function signature mismatch between "
+                    f"Broma and IDB ({binding.short_info})! "
+                    "Attempting to correct..."
+                )
                 BIUtils.set_function_signature(ida_ea, binding)
 
             if ida_name.startswith("sub_"):
@@ -1018,11 +1044,24 @@ class BromaImporter:
                     )
 
         # and now handle duplicates
+        total_duplicate_bindings = sum(len(b) for b in self.duplicates.values())
+        resolved_duplicate_bindings = 0
+
         for addr, bindings in self.duplicates.items():
             ida_ea = get_imagebase() + addr
             ea_func = get_func(ida_ea)
 
-            func_cmt: str = get_func_cmt(ea_func, True)
+            if ea_func is None:
+                print(
+                    "[!] BromaImporter: Couldn't retrieve function for merged "
+                    f"duplicates at {hex(ida_ea)}! Skipping. (Would've merged: "
+                    f"{', '.join(b.qualified_name for b in bindings)})"
+                )
+                continue
+
+            resolved_duplicate_bindings += len(bindings)
+
+            func_cmt: str = get_func_cmt(ea_func, True) or ""
             func_names = ", ".join(
                 [binding.qualified_name for binding in bindings]
             )
@@ -1072,7 +1111,15 @@ class BromaImporter:
                         ea_func, f"Merged with: {func_names}", True
                     )
 
-        print("[+] BromaImporter: Finished importing bindings from Broma files.")
+        total_resolved = resolved_count + resolved_duplicate_bindings
+        total_all = total_bindings + total_duplicate_bindings
+
+        print(
+            f"[+] BromaImporter: Resolved and mapped {total_resolved}/{total_all} "
+            f"bindings onto their respective addresses "
+            f"({resolved_duplicate_bindings}/{total_duplicate_bindings} "
+            "from merged duplicates)."
+        )
 
     def _reset(self):
         """

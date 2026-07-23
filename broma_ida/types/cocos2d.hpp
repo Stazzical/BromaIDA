@@ -830,7 +830,7 @@ namespace cocos2d
 
 	enum 
 	{
-		CCControlStateNormal       = 1 << 0, // The normal, or default state of a control��that is, enabled but neither selected nor highlighted.
+		CCControlStateNormal       = 1 << 0, // The normal, or default state of a control. that is, enabled but neither selected nor highlighted.
 		CCControlStateHighlighted  = 1 << 1, // Highlighted state of a control. A control enters this state when a touch down, drag inside or drag enter is performed. You can retrieve and set this value through the highlighted property.
 		CCControlStateDisabled     = 1 << 2, // Disabled state of a control. This state indicates that the control is currently disabled. You can retrieve and set this value through the enabled property.
 		CCControlStateSelected     = 1 << 3  // Selected state of a control. This state indicates that the control is currently selected. You can retrieve and set this value through the selected property.
@@ -6480,13 +6480,53 @@ namespace cocos2d
 			{
 				_headers = pHeaders;
 			}
-		
+
 			inline std::vector<std::string> getHeaders()
 			{
 				return _headers;
 			}
 
-		protected:
+			inline int getType() {
+				return _type;
+			}
+
+			inline void setType(int type) {
+				_type = type;
+			}
+
+			inline bool getShouldCancel() {
+				return _shouldCancel;
+			}
+
+			inline void setShouldCancel(bool shouldCancel) {
+				_shouldCancel = shouldCancel;
+			}
+
+			inline int getDownloadProgress() {
+				return _downloadProgress;
+			}
+
+			inline void setDownloadProgress(int downloadProgress) {
+				_downloadProgress = downloadProgress;
+			}
+
+			inline int getReadTimeout() {
+				return _readTimeout;
+			}
+
+			inline void setReadTimeout(int readTimeout) {
+				_readTimeout = readTimeout;
+			}
+
+			inline int getConnectTimeout() {
+				return _connectTimeout;
+			}
+
+			inline void setConnectTimeout(int connectTimeout) {
+				_connectTimeout = connectTimeout;
+			}
+
+		public:
 			HttpRequestType             _requestType;    /// kHttpRequestGet, kHttpRequestPost or other enums
 			std::string                 _url;            /// target url that this request is sent to
 			std::vector<char>           _requestData;    /// used for POST
@@ -6497,13 +6537,15 @@ namespace cocos2d
 			std::vector<std::string>    _headers;		      /// custom http headers
 
 			// @note RobTop Addition
-			int _requestTypeGJ;
+			int _type;
 			// @note RobTop Addition
 			bool _shouldCancel;
 			// @note RobTop Addition
 			int _downloadProgress;
 			// @note RobTop Addition
 			int _readTimeout;
+			// @note RobTop Addition
+			int _connectTimeout;
 		};
 
 		class CCHttpResponse : public CCObject
@@ -6594,6 +6636,7 @@ namespace cocos2d
 		protected:
 			bool initWithRequest(CCHttpRequest* request);
 
+		public:
 			// properties
 			CCHttpRequest*        _pHttpRequest;  /// the corresponding HttpRequest pointer who leads to this response 
 			bool                _succeed;       /// to indecate if the http reqeust is successful simply
@@ -6626,6 +6669,7 @@ namespace cocos2d
 
 			// @note RobTop Removal
 			// bool lazyInitThreadSemphore();
+		public:
 			void dispatchResponseCallbacks(float delta);
 
 			// @note RobTop Addition
