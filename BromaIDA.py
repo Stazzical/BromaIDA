@@ -72,15 +72,19 @@ def on_import(form: MainForm, code: int = 0):
 
     bromas_dir = str(dir_form.saved_controls.iDir)
 
-    broma_importer = BromaImporter(platform, Path(bromas_dir))
+    broma_importer = BromaImporter(
+        platform,
+        Path(__file__).resolve().parent / "broma_ida" / "types",
+        Path(bromas_dir)
+    )
     broma_importer.parse_bromas()
     broma_importer.import_into_idb()
 
-    print("[+] BromaIDA: Finished importing bindings from Broma files.")
     SimplePopup(
         "Finished importing "
         f"{IDAUtils.get_platform_printable()} "
-        "bindings from Broma files.",
+        f"bindings {'and types ' if broma_importer.has_types else ''}"
+        "from Broma files.",
         "OK"
     ).show()
 

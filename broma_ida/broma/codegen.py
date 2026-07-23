@@ -32,12 +32,13 @@ class BromaCodegen:
 
     _classes: dict[str, Class]
     _target_platform: BROMA_PLATFORMS
-    _types_path: Path
+    _headers_path: Path
     _broma_path: Path
 
     _graph: ClassGraph
     _defined_classes: set[str]
     _enums_count: int
+    _output_path: Path
 
     def _emit_class(
         self,
@@ -74,12 +75,14 @@ class BromaCodegen:
         self,
         platform: BROMA_PLATFORMS,
         broma_classes: dict[str, Class],
-        types_path: Path,
+        graph: ClassGraph,
+        headers_path: Path,
         broma_path: Path
     ):
         self._target_platform = platform
         self._classes = broma_classes
-        self._types_path = types_path
+        self._graph = graph
+        self._headers_path = headers_path
         self._broma_path = broma_path
 
         self._output_path = DIRS.user_cache_path / "codegen"
@@ -95,6 +98,8 @@ class BromaCodegen:
             pathlib.Path
         """
         self._defined_classes = set()
+        stl_defs = self._graph.stl_type_definitions
+
         binary_name = Path(get_root_filename()).stem
         self._file_path = (
             self._output_path
@@ -130,13 +135,22 @@ class BromaCodegen:
             enums = (self._broma_path / "../include/Geode/Enums.hpp").resolve().as_posix()
             f.write(f'// Enums (dynamically included from "{enums}")\n')
             self._copy_content(f, enums, "enums_only", True)
-            self._copy_content(f, "cocos2d.hpp", "parse")
-            # I believe these would already come from either Extras.bro or FMOD.bro
-            self._copy_content(f, "fmod.hpp")
-            self._copy_content(f, "fmod_gd.hpp")
-            # assumingly needed for IDA-specific shenanigans??
-            self._copy_content(f, "helpers.hpp")
+            f.flush()
 
+            # headers for these two can be found as part of Geode SDK
+            self._copy_content(f, "cocos2d.hpp", "parse")
+            f.flush()
+
+            self._copy_content(f, "fmod.hpp")
+            f.flush()
+
+            # these should be findable in FMOD.bro too
+            self._copy_content(f, "fmod_gd.hpp")
+            f.flush()
+
+            # Geode's "SeedValue" classes used to simplify some commonly
+            # reoccuring RobTop class members together
+            self._copy_content(f, "helpers.hpp")
             f.flush()
 
             f.write("// typedefs\n")
@@ -145,9 +159,9 @@ class BromaCodegen:
 
             f.flush()
 
-            # some classes from member/function argument/return types
-            # need to be forward declared for them to work
-            f.write("// Broma classes forward declarations\n")
+            # some classes from member/function-argument/return-types
+            # need to be forward-declared for them to work without issues
+            f.write("// Broma class forward-declarations\n")
             for class_name in self._graph.forward_declarations:
                 f.write(self._build_fwd_decl(class_name))
             f.write("\n")
@@ -156,7 +170,7 @@ class BromaCodegen:
 
             f.write("// STL type definitions part 1: Class types by pointer\n")
             # __BromaSTLTypesPtr
-            f.write(stl_builder.emit_ptr_types())
+            f.write(stl_defs.ptr.emit())
             f.write("\n")
 
             f.flush()
@@ -173,7 +187,7 @@ class BromaCodegen:
 
             f.write("// STL type definitions part 2: Class types by value\n")
             # __BromaSTLTypesValue
-            f.write(stl_builder.emit_value_types())
+            f.write(stl_defs.value.emit())
 
         print(
             "[+] BromaCodegen: Wrote type definitions from "
@@ -207,7 +221,7 @@ class BromaCodegen:
                 Defaults to False.
         """
         # detect if we have already passed an absolute path for the file
-        src_path = Path(fname) if Path(fname).is_absolute() else (self._types_path / fname).resolve()
+        src_path = Path(fname) if Path(fname).is_absolute() else (self._headers_path / fname).resolve()
 
         with open(src_path) as fr:
             if not no_header_comment:
@@ -321,24 +335,52 @@ class BromaCodegen:
 
         return lines
 
-    def _parse_relative_includes(self, lines: list[str]) -> list[str]:
+    def _parse_relative_includes(
+        self,
+        lines: list[str],
+        base_dir: Path | None = None
+    ) -> list[str]:
         """
         Parses all relative includes inside a list of lines
         and integrates them back into the lines.
 
         Args:
             lines (list[str])
+            base_dir (Path | None): The root path to the
+                relative include. Defaults to None and turns
+                into `self._headers_path` in the function.
 
         Returns:
             list[str]
         """
+        if base_dir is None:
+            base_dir = self._headers_path
+
         for i, e in enumerate(lines):
             if e.startswith('#include "'):
                 lines[i] = f"// {lines[i]}"
 
                 include_path = e.split('"')[1]
-                with open(self._types_path / include_path) as fr:
-                    lines[i+1:i+1] = [*fr.readlines(), "\n\n"]
+                include_full_path = (base_dir / include_path).resolve()
+
+                try:
+                    with open(include_full_path) as fr:
+                        nested_lines = fr.readlines()
+                except FileNotFoundError:
+                    print(
+                        "[!] BromaCodegen: Couldn't resolve relative "
+                        f"include '{include_path}' from "
+                        f"'{base_dir}'! Skipping..."
+                    )
+                    continue
+
+                # recurse so includes-of-includes resolve relative
+                # to their own directory too
+                nested_lines = self._parse_relative_includes(
+                    nested_lines, include_full_path.parent
+                )
+
+                lines[i+1:i+1] = [*nested_lines, "\n\n"]
 
         return lines
     

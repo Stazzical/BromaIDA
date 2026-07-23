@@ -134,38 +134,3 @@ class ClassBuilder:
 
     def get_str(self) -> str:
         return self._class_str
-
-class STLClassBuilder:
-    stl_types: tuple[list[str], list[str]]
-
-    def __init__(
-        self,
-        stl_types: tuple[list[str], list[str]]
-    ) -> None:
-        self.stl_types = stl_types
-
-    def emit_ptr_types(self) -> str:
-        if len(self.stl_types[0]) == 0:
-            return ""
-
-        body = "class __BromaSTLTypesPtr {\npublic:\n"
-
-        for member in self.stl_types[0]:
-            body += f"\t{member};\n"
-
-        body += "};\n"
-
-        return body
-
-    def emit_value_types(self) -> str:
-        if len(self.stl_types[1]) == 0:
-            return ""
-
-        body = "class __BromaSTLTypesValue {\npublic:\n"
-
-        for member in self.stl_types[1]:
-            body += f"\t{member};\n"
-
-        body += "};\n"
-
-        return body
