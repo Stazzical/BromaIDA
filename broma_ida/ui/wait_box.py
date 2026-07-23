@@ -11,7 +11,7 @@ class WaitBox:
         Creates a wait box context manager.
 
         Args:
-            message (str): The wait box message
+            message (str): The wait box message.
             hide_cancel (bool, optional): Whether to hide the cancel button.
                 Defaults to True.
         """
@@ -19,10 +19,11 @@ class WaitBox:
         self.hide_cancel = hide_cancel
 
     def __enter__(self) -> None:
-        """Shows a wait box.
+        """
+        Shows a wait box.
 
         Args:
-            message (str): The wait box message
+            message (str): The wait box message.
             hide_cancel (bool, optional): Whether to hide the cancel button.
                 Defaults to True.
         """

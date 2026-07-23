@@ -34,17 +34,14 @@ class BromaCodegen:
 
     _graph: ClassGraph
     _defined_classes: set[str]
-    _file_path: Path
+    _enums_count: int
 
     def _emit_class(
         self,
         f: TextIOWrapper,
-        cls: Class
+        cls: Class | None
     ):
-        if cls is None:
-            return
-
-        if cls.name in self._defined_classes:
+        if cls is None or cls.name in self._defined_classes:
             return
 
         f.write(
@@ -58,7 +55,7 @@ class BromaCodegen:
         self._defined_classes.add(cls.name)
 
     @staticmethod
-    def _emit_fwd_decl(f, name: str):
+    def _build_fwd_decl(name: str):
         if "::" in name:
             parts = name.split("::")
             bare = parts[-1]
@@ -66,9 +63,9 @@ class BromaCodegen:
                 f"namespace {ns} {{" for ns in parts[:-1]
             )
             close_ns = (" }" * (len(parts) - 1))[1:]
-            f.write(f"{open_ns} class {bare}; {close_ns}\n")
-        else:
-            f.write(f"class {name};\n")
+            return f"{open_ns} class {bare}; {close_ns}\n"
+        
+        return f"class {name};\n"
 
     def __init__(
         self,
@@ -145,12 +142,12 @@ class BromaCodegen:
             # need to be forward declared for them to work
             f.write("// Broma classes forward declarations\n")
             for class_name in self._graph.forward_declarations:
-                self._emit_fwd_decl(f, class_name) # type: ignore
+                f.write(self._build_fwd_decl(class_name))
             f.write("\n")
 
             f.flush()
 
-            f.write("// STL type definitions part 1: class types by pointer\n")
+            f.write("// STL type definitions part 1: Class types by pointer\n")
             # __BromaSTLTypesPtr
             f.write(stl_builder.emit_ptr_types())
             f.write("\n")
@@ -162,15 +159,23 @@ class BromaCodegen:
             # by-value member/function argument/return types come before their use
             for class_name in self._graph.class_order:
                 cls = self._classes.get(class_name)
-                self._emit_class(f, cls) # type: ignore
+                self._emit_class(f, cls)
             f.write("\n")
 
             f.flush()
 
-            f.write("// STL type definitions part 2: class types by value\n")
+            f.write("// STL type definitions part 2: Class types by value\n")
             # __BromaSTLTypesValue
             f.write(stl_builder.emit_value_types())
 
+        print(
+            "[+] BromaCodegen: Wrote type definitions from "
+            f"{self._enums_count} enums from 'Enums.hpp', "
+            f"{len(self._defined_classes) - len(self._classes)} "
+            "classes found from headers and "
+            f"{len(self._classes)} Broma classes to "
+            f"{self._file_path}"
+        )
         return self._file_path
 
     def _copy_content(
@@ -295,7 +300,7 @@ class BromaCodegen:
 
     def _filter_relative_includes(self, lines: list[str]) -> list[str]:
         """
-        Comments out relative includes from a list of lines
+        Comments out relative includes from a list of lines.
 
         Args:
             lines (list[str])
@@ -348,6 +353,7 @@ class BromaCodegen:
         macro_depth = 0
         enum_depth = 0
         in_enum = False
+        enum_count = 0
 
         for line in lines:
             stripped = line.lstrip()
@@ -368,6 +374,7 @@ class BromaCodegen:
                 if not stripped.startswith("enum class "):
                     continue
                 in_enum = True
+                enum_count += 1
 
             out.append(line)
 
@@ -377,4 +384,5 @@ class BromaCodegen:
             if enum_depth == 0 and ";" in line:
                 in_enum = False
 
+        self._enums_count = enum_count
         return out

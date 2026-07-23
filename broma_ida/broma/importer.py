@@ -297,12 +297,15 @@ class BIUtils:
     # Signature stuff
 
     @staticmethod
-    def has_mismatch(function: ida_func_type_data_t, binding: Binding) -> bool:
+    def has_mismatch(
+        function: ida_func_type_data_t | None,
+        binding: Binding
+    ) -> bool:
         """
         Checks if there is a mismatch between the IDB and a binding.
 
         Args:
-            function (func_type_data_t):
+            function (func_type_data_t | None):
                 The function signature returned by IDA.
             binding (Binding): The binding.
 
@@ -312,16 +315,31 @@ class BIUtils:
         if function is None:
             return True
 
-        if function.rettype != binding.ret:
+        # constructors and destructors have no return types
+        # just let IDA do what it has to with them
+        if binding.ret.type != "" \
+                and STLUtils.normalize_type(str(function.rettype)) != binding.ret.type:
+            return True
+
+        # IDA might've guessed extra arguments,
+        # then we'll have an out-of-range index
+        # when checking the binding
+        if len(function) != len(binding.parameters) + (0 if binding.is_static else 1):
             return True
 
         for i, arg in enumerate(function):
+            ida_arg = STLUtils.normalize_type(
+                str(arg.type)
+            )
+
             if i == 0 and not binding.is_static:
-                if str(arg) != f"""{binding.class_name}*""":
+                if ida_arg != f"{binding.class_name}*":
                     return True
-            elif STLUtils.normalize_type(str(arg)) != binding.parameters[
-                i - (0 if binding.is_static else 1)
-            ].expanded_type:
+            elif ida_arg != STLUtils.to_ida_equivalent(
+                binding.parameters[
+                    i - (0 if binding.is_static else 1)
+                ].type
+            ):
                 return True
 
         return False
@@ -346,7 +364,8 @@ class BIUtils:
 
         if binding.has_stl_args:
             for i in range(len(binding_fix.parameters)):
-                if "std::" in binding_fix.parameters[i].type:
+                if binding_fix.parameters[i].stripped_type != "std::string" \
+                        and "std::" in binding_fix.parameters[i].type:
                     arg_stl_idx.append(i)
                     binding_fix.parameters[i] = ArgType("void*", binding_fix.parameters[i].name)
 
@@ -385,6 +404,9 @@ class BIUtils:
                     "Please open a GitHub issue."
                 )
                 return
+
+            if "const" in binding.parameters[idx].type:
+                stl_type.set_const()
 
             if binding.parameters[idx].type.endswith("&") or \
                     binding.parameters[idx].type.endswith("*"):

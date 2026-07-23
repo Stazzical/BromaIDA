@@ -28,23 +28,33 @@ class STLUtils:
     }
     """Dictionary of STL types to their expanded forms."""
 
-    has_two_templates = lambda s: "{1}" in s  # noqa" E731
-    """True if the STL type takes 2 templates."""
+    @staticmethod
+    def format_ptr(pt: str) -> str:
+        """IDA is east pointer (ew)"""
+        return sub(r"([^ ])\*", r"\1 *", pt)
 
-    format_ptr = lambda pt: sub(  # noqa: E731
-        r"([^ ])\*", r"\1 *", pt
-    )
-    """IDA is east pointer (ew)"""
+    @staticmethod
+    def to_ida_equivalent(t: str) -> str:
+        """
+        IDA always resolves references into raw pointers internally,
+        so a canonical type's '&' needs to become '*' before comparing
+        against anything sourced from IDA.
+        """
+        # as of now the 'geode::' namespace
+        # is only for SeedValue classes
+        # they're put in 'helpers.hpp';
+        # this won't be needed when we finish
+        # the sdk parser.
+        return t.replace("geode::", "").replace("&", "*")
 
-    strip_crp = lambda tt: (  # noqa: E731
-        cast(str, tt)
-        .removesuffix("&")
-        .removesuffix("*")
-        .removeprefix("const ")
-        .removesuffix(" const")
-        .lstrip().rstrip()
-    )
-    """Strips const, reference and pointer from the type."""
+    @staticmethod
+    def strip_crp(tt: str) -> str:
+        """Strips const, reference and pointer from the type."""
+        return (
+            tt.removesuffix("&").removesuffix("*")
+            .removeprefix("const ").removesuffix(" const")
+            .strip()
+        )
 
     @staticmethod
     def normalize_type(t: str) -> str:
@@ -61,6 +71,12 @@ class STLUtils:
             str
         """
         t = t.strip().replace("gd::", "std::")
+
+        # you darn whitespaces get off my property!!
+        t = sub(r"\s+", " ", t)
+        t = sub(r"\s*,\s*", ", ", t)
+        t = sub(r"<\s+", "<", t)
+        t = sub(r"\s+>", ">", t)
 
         # normalize east const to west const
         t = sub(
@@ -296,7 +312,7 @@ class ArgType:
     def __eq__(self, other):
         if isinstance(other, str):
             return self.type == STLUtils.normalize_type(other)
-        elif isinstance(other, ArgType) or isinstance(other, RetType):
+        elif isinstance(other, (ArgType, RetType)):
             return self.type == other.type
 
         return NotImplemented

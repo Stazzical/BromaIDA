@@ -1,28 +1,31 @@
 from typing import Callable, NoReturn
 from functools import cache
 
-from idaapi import (
-    get_imagebase, decompile,
-    BADADDR, SN_NOWARN,
-    IDA_SDK_VERSION
-)
+from ida_idaapi import BADADDR
 from ida_kernwin import ASKBTN_BTN1
-from ida_name import get_name_ea
+from ida_name import (
+    get_name_ea,
+    SN_NOWARN, set_name
+)
 from ida_diskio import idadir
 from ida_ida import inf_get_filetype, f_PE, f_MACHO, f_ELF
-from ida_segment import get_first_seg
-from ida_bytes import get_dword, get_bytes
-from ida_segment import get_segm_by_sel
-from idc import (
-    set_name, selector_by_name, get_idb_path,
-    FUNC_LIB
+from ida_segment import (
+    get_first_seg, get_segm_by_name
 )
-from ida_funcs import func_t as ida_func_t
+from ida_bytes import get_dword, get_bytes
+from ida_loader import get_path, PATH_TYPE_IDB
+from ida_funcs import (
+    func_t as ida_func_t, FUNC_LIB
+)
 from ida_typeinf import (
     func_type_data_t as ida_func_type_data_t,
-    tinfo_t as ida_tinfo_t
+    tinfo_t as ida_tinfo_t,
+    get_idati
 )
-from ida_nalt import get_tinfo, retrieve_input_file_md5
+from ida_nalt import (
+    get_tinfo, retrieve_input_file_md5,
+    get_imagebase
+)
 from ida_dirtree import (
     get_std_dirtree,
     dirtree_visitor_t as ida_dirtree_visitor_t,
@@ -30,6 +33,7 @@ from ida_dirtree import (
     direntry_t as ida_direntry_t,
     dirtree_t as ida_dirtree_t
 )
+from ida_pro import IDA_SDK_VERSION
 
 from struct import unpack
 from pathlib import Path
@@ -52,16 +56,17 @@ DirtreeEntry = tuple[ida_direntry_t, str]
 
 
 def stop(reason: str | None = None) -> NoReturn:
-    """Nuh Uh"""
+    """Kills the plugin process."""
     raise SystemExit if reason is None else Exception(reason)
 
 
 def path_exists(path: str, ext: str = "") -> bool:
-    """Checks if a path exists.
+    """
+    Checks if a path exists.
 
     Args:
         path (str)
-        ext (str, optional): Extention of file. Defaults to "".
+        ext (str, optional): Extension of file. Defaults to "".
 
     Returns:
         bool
@@ -78,7 +83,7 @@ def path_exists(path: str, ext: str = "") -> bool:
 
 
 class IDAUtils:
-    """Some IDA utilities."""
+    """Collection of utilities to work with IDA indirectly."""
 
     # Mach-O Load commands
     _MINIMUM_OS_VERSION_LOAD_COMMAND = 0x32
@@ -96,11 +101,9 @@ class IDAUtils:
         "imac": "Intel MacOS",  # MacchewOS my beloved
         "m1": "M1 MacOS",
         "ios": "iOS",
-        "android32": "Android (32 bit)",
-        "android64": "Android (64 bit)"
+        "android32": "Android (32-bit)",
+        "android64": "Android (64-bit)"
     }
-
-    IDA_VERSION: int = IDA_SDK_VERSION
 
     class DirtreeCollector(ida_dirtree_visitor_t):
         def __init__(self, tree: TreeType, path: str, top: bool = True):
@@ -172,7 +175,7 @@ class IDAUtils:
     @staticmethod
     def __get_minimum_mach_o_os_version() -> int:
         """
-        Internal. Gets the Minimum OS Version struct from the Mach-O header
+        Gets the minimum OS version struct from the Mach-O header.
 
         Returns:
             int: -1 if it couldn't find MOSV load command
@@ -215,44 +218,38 @@ class IDAUtils:
     def get_platform() -> BROMA_PLATFORMS:
         """
         Gets the currently open binary's target platform.
+        Raises a `RuntimeError` if detection fails.
 
         Returns:
             BROMA_PLATFORMS
         """
-        platform: str
         file_type = inf_get_filetype()
 
         if file_type == f_PE:
-            platform = "win"
+            return "win"
         elif file_type == f_MACHO:
             cpu_type = get_dword(
-                get_segm_by_sel(selector_by_name("HEADER")).start_ea + 4
+                get_segm_by_name("HEADER").start_ea + 4
             )
 
             if cpu_type == IDAUtils._CPU_TYPE_ARM64:
                 platform_type = IDAUtils.__get_minimum_mach_o_os_version()
 
                 if platform_type == IDAUtils._PLATFORM_TYPE_IOS:
-                    platform = "ios"
+                    return "ios"
                 elif platform_type == IDAUtils._PLATFORM_TYPE_MACOS:
-                    platform = "m1"
-                else:
-                    # appletv gd real
-                    ...
+                    return "m1"
             elif cpu_type == IDAUtils._CPU_TYPE_X86_64:
-                platform = "imac"
+                return "imac"
         elif file_type == f_ELF:
             bitness = get_first_seg().bitness
 
             if bitness == 0x1:
-                platform = "android32"
+                return "android32"
             elif bitness == 0x2:
-                platform = "android64"
-            elif bitness == 0x0:
-                # android 16bit real :troll:
-                ...
+                return "android64"
 
-        return platform
+        raise RuntimeError("no supported target platform was found for the currently open binary")
 
     @staticmethod
     @cache
@@ -275,7 +272,7 @@ class IDAUtils:
         Returns:
             str
         """
-        idb_path: str = get_idb_path().replace("\\", "/")
+        idb_path: str = get_path(PATH_TYPE_IDB).replace("\\", "/")
         idb_binary_md5: str = retrieve_input_file_md5().hex()
 
         hash_str = f"{idb_path}-{idb_binary_md5}".encode()
@@ -294,7 +291,8 @@ class IDAUtils:
         if not HAS_IDACLANG:
             return "none"
 
-        return "clang" if IDAUtils.IDA_VERSION < 900 else "old_clang"
+        # TODO: support new clang parser in IDA 9.2+
+        return "clang" if IDA_SDK_VERSION < 900 else "old_clang"
 
     @staticmethod
     @cache
@@ -332,7 +330,7 @@ class IDAUtils:
 
         Returns:
             bool: True if the address has been renamed successfully
-                after max trues.
+                after maximum tries.
         """
         renamed = False
 
@@ -376,41 +374,38 @@ class IDAUtils:
     def get_function_info(
         ida_ea: int,
         force: bool = False
-    ) -> ida_func_type_data_t:
+    ) -> ida_func_type_data_t | None:
         """
         Gets the info of the function at the given address.
 
         Args:
-            ida_ea (int): The function address
-            force (bool, optional): If the data should be forcefully obtained.
-                Forces a decompilation of `ida_ea`. Defaults to `False`.
+            ida_ea (int): The function's address.
+            force (bool, optional): If the data should be forcefully
+                obtained using recovery methods like decompilation.
+                Defaults to False.
 
         Returns:
-            ida_func_type_data_t: The `func_type_data_t` of the function.
-                Returns `None` only if the function is too big to decompile.
+            ida_typeinf.func_type_data_t | None: The `ida_typeinf.func_type_data_t` of
+                the function or `None` if unable to get function info.
         """
         tif = ida_tinfo_t()
-        func_info = ida_func_type_data_t()
-
-        if get_tinfo(tif, ida_ea):
-            if tif.get_func_details(func_info):
-                return func_info
-
-        # if we reached here then get_func_details
-        # returned False for no fucking reason
+        if get_tinfo(tif, ida_ea) and tif.is_func():
+            fi = ida_func_type_data_t()
+            if tif.get_func_details(fi):
+                return fi
 
         if not force:
-            return None  # type: ignore
+            return None
 
-        xfunc = decompile(ida_ea)
+        try:
+            from ida_hexrays import decompile
+            cfunc = decompile(ida_ea)
+            if cfunc is not None:
+                return IDAUtils.get_function_info(ida_ea)
+        except ImportError:
+            pass
 
-        if xfunc is None:
-            # function is too big to decompile, or some other decomp error
-            return None  # type: ignore
-
-        xfunc.type.get_func_details(func_info)  # type: ignore
-
-        return func_info
+        return None
 
     @staticmethod
     def is_library_function(func: ida_func_t) -> bool:
@@ -419,7 +414,7 @@ class IDAUtils:
         Has some heuristics to detect false library functions.
 
         Args:
-            func (ida_func_t): The function to check.
+            func (ida_funcs.func_t): The function to check.
 
         Returns:
             bool
@@ -443,7 +438,8 @@ class IDAUtils:
 
     @staticmethod
     def get_dirtree_entries(
-        tree: TreeType, path: str = "/"
+        tree: TreeType,
+        path: str = "/"
     ) -> list[DirtreeEntry]:
         """
         Gets the entries of a dirtree (`dirtree_id_t`)

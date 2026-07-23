@@ -2,48 +2,27 @@ from pybroma import Class
 
 from broma_ida.broma.class_graph import ClassGraph
 from broma_ida.broma.constants import BROMA_PLATFORMS, BROMA_PLATFORM_GROUPS
+from broma_ida.broma.argtype import STLUtils
 
 
 class ClassBuilder:
     """Builds a C++ class string from a Broma Class."""
     _target_platform: BROMA_PLATFORMS
     _broma_class: Class
-    _class_str: str
     _graph: ClassGraph
 
-    # TODO: just make this do the parsing, make lists of members
-    # and methods to be used in get_str for making the class instead
-    # unless there wouldn't be a use for them outside of string
-    # generation. do not emit empty string for no fields, emit 
-    # a forward declare instead.
+    _class_str: str
+
     def _import_class(self):
         """
         Converts a Broma class to a C++ class
         declaration string for the IDA parser.
         """
-        bases = ", ".join(
-            f"public {cls}" for cls in self._broma_class.superclasses
-        )
-        inherit = f" : {bases}" if bases else ""
-        # we declare the class inside namespace blocks to
-        # avoid C++ parsing errors, this is done
-        # after the body has finished constructing
-        bare_name = self._broma_class.name.rsplit("::", 1)[-1]
-
-        body = f"class {bare_name}{inherit}\n{{\npublic:\n"
-
+        body = ""
         has_left_functions = False
 
         for sig in self._graph.get_own_virtuals(self._broma_class.name):
-            # if Broma files had reliably defined inline functions
-            # in the class definitions, the field could've been
-            # gotten as an InlineField, which has a C++ string
-            # defining the function fully (InlineField.inner).
-            # regardless, this isn't very useful for type defining.
-
             # supress any missing functions on the target platform.
-            # attributes from classes also fall-through and get
-            # applied to functions and members.
             if sig.is_missing:
                 continue
 
@@ -82,11 +61,11 @@ class ClassBuilder:
                     body += "\n"
                     has_left_functions = False
 
-                body += f"\t{
-                    member_field.type.name
-                        .replace('gd::', 'std::')
-                        .replace('geode::', '')
-                } {member_field.name};\n"
+                body += f"""\t{
+                    STLUtils.normalize_type(
+                        member_field.type.name
+                    ).replace("geode::", "")
+                } {member_field.name};\n"""
 
             elif pad_field is not None:
                 # skip other members because no padding for current platform (why)
@@ -108,17 +87,36 @@ class ClassBuilder:
 
                 body += f"\tPAD({pad_amount});\n"
 
-        body += "};\n"
+        # TODO: superclasses contains 'depends'
+        # attribute's classes too as of now,
+        # we don't wanna add those to the bases
+        # if they're not actually a base.
+        bases = ", ".join(
+            f"public {cls}" for cls in self._broma_class.superclasses
+        )
+        inherit = f" : {bases}" if bases else ""
 
         if "::" in self._broma_class.name:
             parts = self._broma_class.name.split("::")
+            bare_name = parts[-1]
             open_ns = " ".join(
                 f"namespace {ns} {{" for ns in parts[:-1]
             )
             close_ns = (" }" * (len(parts) - 1))[1:]
-            self._class_str = f"{open_ns}\n{body}{close_ns}\n\n"
+
+            self._class_str = (
+                f"{open_ns}\n"
+                f"class {bare_name}{inherit} {{"
+                f"{'\npublic:\n' + body if body is not '' else ''}"
+                "};\n"
+                f"{close_ns}\n\n"
+            )
         else:
-            self._class_str = body + "\n"
+            self._class_str = (
+                f"class {self._broma_class.name}{inherit} {{"
+                f"{'\npublic:\n' + body if body is not '' else ''}"
+                "};\n\n"
+            )
 
     def __init__(
         self,
@@ -128,9 +126,10 @@ class ClassBuilder:
     ):
         self._target_platform = platform
         self._broma_class = broma_class
-        self._class_str = ""
         self._graph = graph
-        
+
+        self._class_str = ""
+
         self._import_class()
 
     def get_str(self) -> str:
