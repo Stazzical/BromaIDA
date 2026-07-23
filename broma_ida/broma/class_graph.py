@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 from pybroma import Class
 
+from broma_ida.data.data_manager import DataManager
 from broma_ida.broma.binding import FunctionSignature
 from broma_ida.broma.argtype import STLUtils
 
@@ -59,7 +60,9 @@ class ClassGraph:
 
         # list instead of set to keep the order for imports
         own_virtuals: list[FunctionSignature] = field(default_factory=list)
+
         inherited_virtuals: set[FunctionSignature] = field(default_factory=set)
+        inherited_virtuals_by_name: dict[str, set[FunctionSignature]] = field(default_factory=dict)
 
         # normalized_type -> [(stripped_leaf_type, is_by_value), ...]
         type_refs: dict[str, list[tuple[str, bool]]] = field(default_factory=dict)
@@ -82,6 +85,9 @@ class ClassGraph:
             self._resolve_inherited_virtuals(name)
 
         self._emit_order()
+
+        if DataManager().get("debug_info") == True:
+            self.diagnose_broken_overrides()
 
     @staticmethod
     def _build_class_info(
@@ -142,18 +148,15 @@ class ClassGraph:
         # getting all virtual functions that the bases
         # (and also their bases) declare themselves
         sigs: set[FunctionSignature] = set()
-
-        # as of writing, the official Broma parser currently
-        # also appends any classes inside the "depends" attribute
-        # of Broma class definitions to the superclasses list,
-        # so we don't have to worry about it.
         for base_name in cls.superclasses:
             base_info = self._info.get(base_name)
             if base_info:
                 sigs |= set(base_info.own_virtuals)
             sigs |= self._resolve_inherited_virtuals(base_name)
 
-        info.inherited_virtuals = sigs
+        for sig in sigs:
+            info.inherited_virtuals_by_name.setdefault(sig.name, set()).add(sig)
+
         return sigs
 
     @staticmethod
@@ -266,16 +269,17 @@ class ClassGraph:
         return fwd_needed
 
     @cached_property
-    def stl_forward_declarations(self) -> set[str]:
+    def _stl_derived(self) -> tuple[set[str], "STLTypeDefinitions"]:
         """
-        All by-pointer referenced types extracted
-        from within STL types. Primarily used for
-        emitting forward-declarations.
-
-        Returns:
-            set[str]
+        Single pass over all STL type references, computing both:
+        - the forward-declaration set for by-pointer STL-referenced classes
+        - the stub struct definitions (ptr/value)
         """
         stl_fwd_needed: set[str] = set()
+        ptr = STLStubDefinition("__BromaSTLTypesPtr")
+        value = STLStubDefinition("__BromaSTLTypesValue")
+        seen_members: set[str] = set()
+        idx = 0
 
         for info in self._info.values():
             for type_str, entries in info.type_refs.items():
@@ -285,14 +289,36 @@ class ClassGraph:
                 for bare, by_value in entries:
                     if by_value or bare in self._namespace_prefixes:
                         continue
-
                     if bare in self._classes:
                         stl_fwd_needed.add(bare)
 
-        return stl_fwd_needed
+                stripped = STLUtils.strip_crp(type_str)
+                if stripped in seen_members:
+                    continue
+                seen_members.add(stripped)
 
-    @cached_property
-    def stl_type_definitions(self) -> STLTypeDefinitions:
+                member = STLMember(stripped, f"m_{idx}")
+                idx += 1
+
+                target = value if any(bv for _, bv in entries) else ptr
+                target.members.append(member)
+
+        return stl_fwd_needed, STLTypeDefinitions(ptr, value)
+
+    @property
+    def stl_forward_declarations(self) -> set[str]:
+        """
+        All by-pointer referenced types extracted
+        from within STL types. Primarily used for
+        emitting forward-declarations.
+
+        Returns:
+            set[str]
+        """
+        return self._stl_derived[0]
+
+    @property
+    def stl_type_definitions(self) -> "STLTypeDefinitions":
         """
         Retrieve the unexpanded STL types needed to be
         defined in two stub dummy classes under a 
@@ -301,32 +327,57 @@ class ClassGraph:
         - Member/function types used by value
 
         Returns:
-            STLTypeDefinitions:
-                Contains two `STLStubDefinition` instances with names
-                "__BromaSTLTypesPtr" and "__BromaSTLTypesValue".
+            STLTypeDefinitions: Contains two `STLStubDefinition`
+                instances with names "__BromaSTLTypesPtr"
+                and "__BromaSTLTypesValue".
         """
-        ptr = STLStubDefinition("__BromaSTLTypesPtr")
-        value = STLStubDefinition("__BromaSTLTypesValue")
-        seen: set[str] = set()
-        idx = 0
+        return self._stl_derived[1]
 
-        for info in self._info.values():
-            for type_str, entries in info.type_refs.items():
-                if "std::" not in type_str:
-                    continue
+    def get_broken_overrides(
+        self, class_name: str
+    ) -> list[tuple[FunctionSignature, set[FunctionSignature]]]:
+        """
+        Finds own virtuals in `class_name` that share a name with a base
+        class's virtual but don't match its full signature, which
+        would most likely be an error than intended.
 
-                stripped = STLUtils.strip_crp(type_str)
-                if stripped in seen:
-                    continue
-                seen.add(stripped)
+        Returns:
+            list of (own_sig, conflicting_base_sigs) pairs.
+        """
+        info = self._info.get(class_name)
+        if info is None:
+            return []
 
-                member = STLMember(stripped, f"m_{idx}")
-                idx += 1
+        broken: list[tuple[FunctionSignature, set[FunctionSignature]]] = []
 
-                target = value if any(by_value for _, by_value in entries) else ptr
-                target.members.append(member)
+        for own_sig in info.own_virtuals:
+            same_name = info.inherited_virtuals_by_name.get(own_sig.name)
+            if not same_name or own_sig in same_name:
+                continue
 
-        return STLTypeDefinitions(ptr, value)
+            broken.append((own_sig, same_name))
+
+        return broken
+
+    def diagnose_broken_overrides(self) -> None:
+        """
+        Scans every class for virtuals that look like
+        intended overrides (same name as a base virtual) but don't
+        signature-match, and prints them.
+        """
+        found_any = False
+
+        for class_name in self._classes:
+            for own_sig, conflicts in self.get_broken_overrides(class_name):
+                found_any = True
+                conflict_list = ", ".join(str(c) for c in conflicts)
+                print(
+                    f"[!] ClassGraph: Possible broken override in {class_name}: "
+                    f"{own_sig} does not match base signature(s) [{conflict_list}]"
+                )
+
+        if not found_any:
+            print("[+] ClassGraph: No broken overrides detected.")
 
     def _get_hard_deps(self, class_name: str) -> list[str]:
         """

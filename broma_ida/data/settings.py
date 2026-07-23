@@ -82,6 +82,14 @@ SETTINGS_GROUPS: tuple[SettingsGroup, ...] = (
                 "If enabled, BromaIDA will automatically skip applying the "
                 "binding and will not mark the address as a function.",
             ),
+            SettingDefinition(
+                "debug_info",
+                "rEnableDebugInfo",
+                False,
+                "Enable Debug Info",
+                "Enable debug information logging "
+                "when importing Broma files.",
+            ),
         ),
     ),
     SettingsGroup(
