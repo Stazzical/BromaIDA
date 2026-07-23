@@ -28,6 +28,9 @@ class STLUtils:
     }
     """Dictionary of STL types to their expanded forms."""
 
+    has_two_templates = lambda s: "{1}" in s  # noqa" E731
+    """True if the STL type takes 2 templates."""
+
     @staticmethod
     def format_ptr(pt: str) -> str:
         """IDA is east pointer (ew)"""

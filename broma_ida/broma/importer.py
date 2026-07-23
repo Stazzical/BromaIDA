@@ -506,11 +506,13 @@ class BromaImporter:
             return (not is_cocos) or is_exception       # GeometryDash.exe
 
         return True
+
+    def _codegen_classes(self) -> Path:
         """
         Codegens the file that contains the parsed Broma classes.
 
         Returns:
-            Path
+            pathlib.Path
         """
         return BromaCodegen(
             self._target_platform,
@@ -587,6 +589,10 @@ class BromaImporter:
 
             for bfile in self._broma_files.values():
                 for func in bfile.functions:
+                    raw_addr = getattr(func.binds, self._target_platform, -1)
+                    if raw_addr in (-1, -2):
+                        continue
+
                     self.bindings.append(
                         Binding.from_freefunc(func)
                     )
@@ -659,6 +665,10 @@ class BromaImporter:
 
         for bfile in self._broma_files.values():
             for func in bfile.functions:
+                raw_addr = getattr(func.binds, self._target_platform, -1)
+                if raw_addr in (-1, -2):
+                    continue
+
                 self.bindings.append(
                     Binding.from_freefunc(func)
                 )
