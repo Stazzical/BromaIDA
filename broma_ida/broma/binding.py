@@ -3,7 +3,7 @@ from functools import cached_property
 
 from ida_name import is_visible_cp
 
-from pybroma import FunctionBindField
+from pybroma import FunctionBindField, Function
 
 from broma_ida.broma.argtype import ArgType, RetType
 from broma_ida.utils import IDAUtils
@@ -33,6 +33,17 @@ class FunctionSignature:
         class_name: str,
         f: FunctionBindField
     ) -> "FunctionSignature":
+        """
+        Get a FunctionSignature class instance from the
+        class name and FunctionBindField instance.
+
+        Args:
+            class_name (str)
+            f (FunctionBindField)
+
+        Returns
+            FunctionSignature
+        """
         proto = f.prototype
         platform = str(IDAUtils.get_platform())
         # get address as an int at base of 16 (hexadecimal int)
@@ -73,7 +84,7 @@ class FunctionSignature:
         Returns:
             str: ClassName::MethodName
         """
-        return f"{self.class_name}::{self.name}"
+        return f"{self.class_name + '::' if self.class_name is not '' else ''}{self.name}"
 
     @cached_property
     def ida_qualified_name(self) -> str:
@@ -84,7 +95,7 @@ class FunctionSignature:
         Returns:
             str
         """
-        return f"{self.class_name}::{self.name}".replace(
+        return self.qualified_name.replace(
             "~", "~" if is_visible_cp(ord("~")) else "d"
         )
 
@@ -194,6 +205,17 @@ class Binding(FunctionSignature):
         class_name: str,
         f: FunctionBindField
     ) -> "Binding":
+        """
+        Get a Binding class instance from the
+        class name and FunctionBindField instance.
+
+        Args:
+            class_name (str)
+            f (FunctionBindField)
+
+        Returns
+            Binding
+        """
         proto = f.prototype
         platform = str(IDAUtils.get_platform())
         raw_addr = getattr(
@@ -222,6 +244,46 @@ class Binding(FunctionSignature):
             address=raw_addr
         )
 
+    @classmethod
+    def from_freefunc(
+        cls,
+        f: Function
+    ) -> "Binding":
+        """
+        Get a Binding class instance of a free
+        function from its Function instance.
+
+        Args:
+            f (Function)
+
+        Returns
+            Binding
+        """
+        proto = f.prototype
+        platform = str(IDAUtils.get_platform())
+        raw_addr = getattr(
+            f.binds,
+            platform,
+            -1
+        )
+        missing = (
+            platform in proto.attrs.missing
+            or BROMA_PLATFORM_GROUPS.get(platform) in proto.attrs.missing
+        )
+
+        return cls(
+            name=proto.name,
+            class_name="",
+            ret=RetType(proto.ret.name),
+            parameters=[
+                ArgType(arg_t.name, param_name)
+                for param_name, arg_t in proto.args.items()
+            ],
+            is_inline=(raw_addr == -2),
+            is_missing=missing,
+            address=raw_addr
+        )
+
     @cached_property
     def has_address(self) -> bool:
         """True if the binding is not missing or inlined."""
@@ -244,8 +306,8 @@ class Binding(FunctionSignature):
         return (
             f"{'static ' if self.is_static else ''}"
             f"{'virtual ' if self.is_virtual else ''}"
-            f"{self.ret.expanded_type} "
-            f"{self.ida_qualified_name}({self.get_args_str(expand_stl=True)});"
+            f"{self.ret.type} "
+            f"{self.ida_qualified_name}({self.get_args_str()});"
         )
 
     def __eq__(self, other: object) -> bool:
@@ -272,9 +334,9 @@ class Binding(FunctionSignature):
         return (
             f"{'virtual ' if self.is_virtual else ''}"
             f"{'static ' if self.is_static else ''}"
-            f"{self.ret.expanded_type} "
-            f"{self.class_name}::{self.name}"
-            f"({', '.join(arg.expanded_type for arg in self.parameters)})"
+            f"{self.ret.type} "
+            f"{self.qualified_name}"
+            f"({', '.join(arg.type for arg in self.parameters)})"
             f" @ {hex(self.address)}; "
             f"({self.ida_qualified_name})"
         )

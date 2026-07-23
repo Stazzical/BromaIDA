@@ -563,6 +563,12 @@ class BromaImporter:
                         Binding.from_field(class_name, function_field)
                     )
 
+            for bfile in self._broma_files.values():
+                for func in bfile.functions:
+                    self.bindings.append(
+                        Binding.from_freefunc(func)
+                    )
+
             return
 
         for class_name, broma_class in self.classes.items():
@@ -627,6 +633,12 @@ class BromaImporter:
 
                 self.bindings.append(
                     Binding.from_field(class_name, function_field)
+                )
+
+        for bfile in self._broma_files.values():
+            for func in bfile.functions:
+                self.bindings.append(
+                    Binding.from_freefunc(func)
                 )
 
     def _pre_import_types(self):
@@ -914,7 +926,12 @@ class BromaImporter:
 
                 set_func_cmt(ida_ea, f"Merged with: {func_names}", True)
             elif func_cmt.startswith("Merged with: "):
-                cmt_func_names = func_cmt.lstrip("Merged with: ")
+                cmt_func_names = func_cmt.removeprefix("Merged with: ")
+
+                # suppress the warning if IDA had truncated
+                # the string cause of character limits
+                if func_names[:len(cmt_func_names)] == cmt_func_names:
+                    continue
 
                 if set(func_names.split(", ")) != \
                         set(cmt_func_names.split(", ")):
@@ -944,6 +961,8 @@ class BromaImporter:
                     set_func_cmt(
                         ida_ea, f"Merged with: {func_names}", True
                     )
+
+        print("[+] BromaImporter: Finished importing bindings from Broma files.")
 
     def _reset(self):
         """
