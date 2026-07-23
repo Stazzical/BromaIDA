@@ -5,7 +5,7 @@ import re
 
 from pybroma import Class
 
-from broma_ida.metadata import SCRIPT_VERSION
+from broma_ida.metadata import __version__, PLUGIN_NAME
 from broma_ida.broma.class_graph import ClassGraph
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.class_builder.class_builder import ClassBuilder, STLClassBuilder
@@ -87,11 +87,8 @@ class BromaCodegen:
         to the path supplied in __init__ as a '.hpp' file
         named after the target platform and binary name.
 
-        Args:
-            path (Path)
-
         Returns:
-            Path
+            pathlib.Path
         """
         self._defined_classes = set()
         self._graph = ClassGraph(self._classes)
@@ -104,9 +101,13 @@ class BromaCodegen:
             buffering = 10 * 1024 * 1024
         ) as f:
             # Set up values used in .hpp for platform-specific definitions
+            # TODO: move these to its own private function so we can properly work through
+            # all the macros we need later for the upcoming SDK parser
+            # OR, BromaImporter could add them on the fly to the final
+            # file's content, so we could safely generate just once
             f.write(
                 FILE_HEADER.format_map({
-                    "BROMAIDA_VERSION": SCRIPT_VERSION,
+                    "BROMAIDA_VERSION": __version__,
                     "BROMAIDA_PLATFORM_MACRO_NAME":
                         self._get_bromaida_platform_macro(),
                     "BROMAIDA_IS_PLATFORM_MACHO_VALUE":

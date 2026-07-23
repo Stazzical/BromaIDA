@@ -14,9 +14,8 @@ from idautils import Names
 from ida_auto import auto_is_ok
 
 from broma_ida.metadata import (
-    SCRIPT_VERSION,
-    PLUGIN_NAME,
-    PLUGIN_HOTKEY
+    __version__,
+    PLUGIN_NAME, PLUGIN_DESCRIPTION, PLUGIN_HOTKEY
 )
 from broma_ida.utils import stop, path_exists, IDAUtils
 from broma_ida.broma.importer import BromaImporter
@@ -150,13 +149,13 @@ class BromaIDAPlugin(ida_plugin_t):
 
     def init(self):
         """Ran on plugin load."""
-        ida_msg(f"{PLUGIN_NAME} v{SCRIPT_VERSION} initialized\n")
+        ida_msg(f"{PLUGIN_NAME} v{__version__} initialized.\n")
 
         return IDA_PLUGIN_KEEP
 
     def term(self):
         """Ran on plugin unload."""
-        ida_msg(f"{PLUGIN_NAME} v{SCRIPT_VERSION} unloaded\n")
+        ida_msg(f"{PLUGIN_NAME} v{__version__} unloaded.\n")
 
     def run(self, arg):
         """Ran on "File -> Script File"

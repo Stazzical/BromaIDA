@@ -3,6 +3,8 @@ from pathlib import Path
 from pickle import UnpicklingError
 import shelve
 
+from broma_ida.data.settings import ALL_SETTINGS
+
 
 class DataManager:
     """Manages saved data. This class is a singleton."""
@@ -22,51 +24,48 @@ class DataManager:
         return cls._DataManager__instance  # type: ignore[misc]
 
     def _init_values(self):
-        """Initializes DataManager's default values."""
+        """Initializes DataManager's values."""
         try:
-            self.get("always_overwrite_merge_information", True)
-            self.get("disable_broma_hash_check", False)
-            self.get("always_overwrite_idb", False)
-            self.get("export_return_types", False)
-            self.get("export_args_names", False)
-            self.get("skip_missing_function_prompts", True)
-
-            self.get("import_types", True)
-            self.get("set_default_parser_args", True)
-            self.get("ignore_mismatched_structs", False)
-        except UnpicklingError:
+            for s in ALL_SETTINGS:
+                self.get(s.key, s.default)
+        except (UnpicklingError, EOFError, OSError) as e:
             print(
-                "[!] BromaDataManager: Shelf is corrupted! "
-                "Resetting to default values."
+                "[!] BromaDataManager: Failed to initialize "
+                f"values ({e})! Saved settings are not loaded!"
             )
             self._delete_shelf()
-            self.__shelf = shelve.open(self.__shelf_path)
-
-            self._init_values()
+            self.__shelf = shelve.Shelf({})
 
     def init(self, filepath: Path):
         """
         Initializes a DataManager instance.
 
         Args:
-            filepath (Path): Path to the shelf file
+            filepath (Path): Path to the shelf file.
         """
-        filepath.parent.mkdir(exist_ok=True)
+        if self.__shelf is not None:
+            return
 
-        if self.__shelf is None:
-            self.__shelf_path = filepath
+        self.__shelf_path = filepath
 
-            try:
-                self.__shelf = shelve.open(filepath)
-            except SyntaxError:
-                print(
-                    "[!] BromaDataManager: Shelf is corrupted! "
-                    "Resetting to default values."
-                )
-                self._delete_shelf()
-                self.__shelf = shelve.open(filepath)
+        try:
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            self.__shelf = shelve.open(filepath)
+        except PermissionError:
+            print(
+                f"[!] BromaDataManager: No write access to {filepath.parent}! "
+                "Settings will not persist between sessions!"
+            )
+            self.__shelf = shelve.Shelf({})
+        except (UnpicklingError, EOFError, OSError) as e:
+            print(
+                f"[!] BromaDataManager: Shelf is corrupted ({e})! "
+                "Resetting to default values."
+            )
+            self._delete_shelf()
+            self.__shelf = shelve.open(filepath)
 
-            self._init_values()
+        self._init_values()
 
     def sync(self):
         """Manually syncs changes to the shelf."""
@@ -86,20 +85,19 @@ class DataManager:
 
     def get(self, key: str, default: Any = __default_argument) -> Any:
         """
-        Safely gets data from the shelf.
-        Populates the key with the default and
-        returns it if the key doesnt exist.
+        Gets the data of a key from the current shelf instance.
+        Populates the key with the default if the key doesn't exist.
 
         Args:
-            key (str): The key name
-            default (Any): The default value
+            key (str): The key name.
+            default (Any): The default value.
         """
         if self.has(key):
             return self.__shelf[key]
         else:
             if default is self.__default_argument:
                 raise KeyError(
-                    f"Shelf has no '{key}' key and no default value provided!"
+                    f"shelf has no '{key}' key and no default value was provided"
                 )
             self.__shelf[key] = default
             return default
@@ -129,5 +127,5 @@ class DataManager:
 
     def _delete_shelf(self):
         """Deletes the shelf."""
-        for suffix in (".bak", ".dat", ".dir"):
-            self.__shelf_path.with_suffix(suffix).unlink(True)
+        for f in self.__shelf_path.parent.glob(f"{self.__shelf_path.stem}*"):
+            f.unlink(missing_ok=True)
