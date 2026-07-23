@@ -1,4 +1,5 @@
 from pathlib import Path
+from platformdirs import PlatformDirs
 
 from ida_idaapi import (
     plugin_t as ida_plugin_t,
@@ -26,6 +27,9 @@ from broma_ida.data.data_manager import DataManager
 from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.main_form import MainForm
 from broma_ida.ui.directory_input_form import DirectoryInputForm
+
+
+SHELF_DIR = PlatformDirs(appname=PLUGIN_NAME, appauthor=False)
 
 
 def check_auto_analysis() -> bool:
@@ -125,7 +129,7 @@ def on_export(form: MainForm, code: int = 0):
 def bida_main():
     """Plugin main entrypoint."""
     DataManager().init(
-        Path.home() / "broma_ida" / "shelf"
+        SHELF_DIR.user_config_path / "shelf"
     )
 
     form_code = MainForm(
