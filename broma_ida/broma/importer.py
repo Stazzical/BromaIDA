@@ -448,11 +448,10 @@ class BromaImporter:
     classes: dict[str, Class] = {}
     duplicates: dict[int, list[Binding]] = {}
 
-    def _win_is_cocos_class(self, class_name: str) -> bool:
+    def _is_class_present(self, class_name: str) -> bool:
         """
-        Distinguishes between the classes present inside the current IDB on Windows
-        based on knowing if it's 'libcocos2d.dll' or 'GeometryDash.exe'.
-        `cocos2d::CCLightning` is an exception due to being a RobTop custom class.
+        Check if the current binary has certain
+        classes present on it.
 
         Args:
             class_name: str
@@ -460,23 +459,31 @@ class BromaImporter:
         Returns:
             bool
         """
-        # it's safest to not assume cocos than check if it's an .exe
-        is_dll = get_root_filename().lower().startswith("libcocos2d")
-        is_cocos = (
-            class_name.startswith("cocos2d")
-            or class_name.startswith("pugi")
-        )
-        # custom RobTop class
-        is_exception = (class_name == "cocos2d::CCLightning")
+        binary_name = get_root_filename().lower()
 
-        # libcocos2d.dll
-        if is_dll:
-            return (not is_cocos) or is_exception
+        if self._target_platform == "win":
+            # what the heck
+            is_cocos = (
+                class_name.startswith("cocos2d")
+                or class_name.startswith("pugi")
+                or class_name == "DS_Dictionary"
+                or class_name == "ObjectDecoder"
+                or class_name == "ObjectDecoderDelegate"
+                or class_name == "CCContentManager"
+            )
+            is_cocos_ext = class_name.startswith("cocos2d::extension")
+            # custom RobTop class, compiled into GeometryDash.exe
+            is_exception = (class_name == "cocos2d::CCLightning")
 
-        # GeometryDash.exe
-        return is_cocos and not is_exception
+            if binary_name.startswith("libcocos2d"):    # libcocos2d.dll
+                return is_cocos and not is_cocos_ext and not is_exception
 
-    def _codegen_classes(self) -> Path:
+            if binary_name.startswith("libextensions"): # libExtensions.dll
+                return is_cocos_ext
+
+            return (not is_cocos) or is_exception       # GeometryDash.exe
+
+        return True
         """
         Codegens the file that contains the parsed Broma classes.
 
@@ -498,15 +505,13 @@ class BromaImporter:
         """
         bfiles = [
             "Cocos2d.bro",
+            # this only references GeometryDash types by-pointer,
+            # but it's not vice-versa for GeometryDash.bro
+            "Extras.bro",
+            "FMOD.bro",
             "GeometryDash.bro",
-            "Extras.bro"
+            "Kazmath.bro"
         ]
-
-        if self._target_platform == "ios":
-            bfiles.append("FMOD.bro")
-
-        if self._target_platform in ("m1", "imac", "ios"):
-            bfiles.append("Kazmath.bro")
 
         for bfile in bfiles:
             bro_path = self._bromas_path / bfile
@@ -514,11 +519,12 @@ class BromaImporter:
                 # TODO: think if we could make use of prompt_invalid_dir from BIUtils
                 # to receive a new directory if import fails.
                 ida_warning(
-                    f"Broma file '{bfile}' not found during import! "
-                    "Aborting..."
+                    f"Broma file '{bfile}' not found during pre-load!\n"
+                    "No bindings (or types) were imported."
                 )
                 stop()
 
+            # TODO: error check for this
             self._broma_files[bfile] = Root(str(bro_path))
 
     def _load_broma_classes(self):
@@ -556,70 +562,72 @@ class BromaImporter:
                     self.bindings.append(
                         Binding.from_field(class_name, function_field)
                     )
-        else:
-            for class_name, broma_class in self.classes.items():
-                if self._target_platform == "win" and self._win_is_cocos_class(class_name):
+
+            return
+
+        for class_name, broma_class in self.classes.items():
+            if not self._is_class_present(class_name):
+                continue
+
+            for field in broma_class.fields:
+                function_field = field.getAsFunctionBindField()
+
+                if function_field is None:
                     continue
 
-                for field in broma_class.fields:
-                    function_field = field.getAsFunctionBindField()
+                func_addr = getattr(
+                    function_field.binds,
+                    self._target_platform,
+                    -1
+                )
 
-                    if function_field is None:
-                        continue
+                # -2 is explicitly inlined, -1 is missing
+                if func_addr == -1 or func_addr == -2:
+                    continue
 
-                    func_addr = getattr(
-                        function_field.binds,
-                        self._target_platform,
-                        -1
-                    )
+                function = function_field.prototype
 
-                    # -2 is explicitly inlined, -1 is missing
-                    if func_addr == -1 or func_addr == -2:
-                        continue
+                # Runs only for the first time an address has a duplicate
+                if func_addr in self.bindings:
+                    dup_binding = self.bindings[
+                        self.bindings.index(func_addr) # type: ignore
+                    ]
+                    error_location = \
+                        f"{class_name}::{function.name} " \
+                        f"and {dup_binding.short_info}"
 
-                    function = function_field.prototype
-
-                    # Runs only for the first time an address has a duplicate
-                    if func_addr in self.bindings:
-                        dup_binding = self.bindings[
-                            self.bindings.index(func_addr) # type: ignore
-                        ]
-                        error_location = \
-                            f"{class_name}::{function.name} " \
-                            f"and {dup_binding.short_info}"
-
-                        if f"{class_name}::{function.name}" == \
-                                dup_binding.qualified_name:
-                            print(
-                                "[!] BromaImporter: Duplicate binding with "
-                                f"same qualified name! ({error_location})"
-                            )
-                            continue
-                        elif class_name == dup_binding.class_name:
-                            print(
-                                "[!] BromaImporter: Duplicate binding within "
-                                f"same class! ({error_location})"
-                            )
-                            continue
-
+                    if f"{class_name}::{function.name}" == \
+                            dup_binding.qualified_name:
                         print(
-                            "[!] BromaImporter: Duplicate binding! "
-                            f"({class_name}::{function.name} "
-                            f"and {dup_binding.short_info})"
+                            "[!] BromaImporter: Duplicate binding with "
+                            f"same qualified name! ({error_location})"
                         )
-                        self.bindings.remove(dup_binding)
-                        self.duplicates[func_addr] = []
-                        self.duplicates[func_addr].append(dup_binding)
-
-                    if func_addr in self.duplicates:
-                        self.duplicates[func_addr].append(
-                            Binding.from_field(class_name, function_field)
+                        continue
+                    elif class_name == dup_binding.class_name:
+                        print(
+                            "[!] BromaImporter: Duplicate binding within "
+                            f"same class! ({error_location})"
                         )
                         continue
 
-                    self.bindings.append(
+                    print(
+                        "[!] BromaImporter: Duplicate binding! "
+                        f"({class_name}::{function.name} "
+                        f"and {dup_binding.short_info})"
+                    )
+                    self.bindings.remove(dup_binding)
+                    self.duplicates[func_addr] = []
+                    self.duplicates[func_addr].append(dup_binding)
+
+                if func_addr in self.duplicates:
+                    self.duplicates[func_addr].append(
                         Binding.from_field(class_name, function_field)
                     )
+                    continue
+
+                self.bindings.append(
+                    Binding.from_field(class_name, function_field)
+                )
 
     def _pre_import_types(self):
         """Pre-import types hook"""
