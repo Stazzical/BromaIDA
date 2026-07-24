@@ -13,10 +13,11 @@ Smartly processes the Broma files from the [Geometry Dash Geode bindings](https:
 
 - Importing bindings
   - Symbol import for functions on platforms that lack them.
-- Import types (see [Importing Types](#importing-types)). If enabled, will preform the following:
+- Importing types (see [Importing Types](#importing-types)). If enabled, will preform the following:
   - Import Broma class members and virtual function tables
   - Import function return types, arguments types and names
   - Attempt to fix the signature of functions guessed by IDA
+  - NOTE: Type import is primarily fine-tuned for the latest version of Geometry Dash (2.2081 as of writing). Support for older versions may come in the future.
 - Exporting bindings (Currently unmaintained, prone to malfunction)
   - Export function addresses for any platform
   - Export function return types (if enabled, see [BromaIDA Settings](#bromaida-settings))
