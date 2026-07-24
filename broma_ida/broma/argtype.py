@@ -1,10 +1,21 @@
-from typing import cast, Final, Union
+from typing import Final
 
 from dataclasses import dataclass, field
 
 from re import sub
 
-STL_TREE = list[str | list[Union[str, "STL_TREE"]]]
+
+@dataclass(slots=True)
+class STLNode:
+    const: str
+    name: str
+    """The actual type."""
+    args: list["STLNode"] = field(default_factory=list)
+    ptr: str = ""
+
+    @property
+    def is_stl(self) -> bool:
+        return "std::" in self.name
 
 
 class STLUtils:
@@ -28,8 +39,17 @@ class STLUtils:
     }
     """Dictionary of STL types to their expanded forms."""
 
-    has_two_templates = lambda s: "{1}" in s  # noqa" E731
-    """True if the STL type takes 2 templates."""
+    STL_CORE_ARITY: Final = {
+        "std::map": 2, "std::unordered_map": 2,
+        "std::vector": 1, "std::set": 1, "std::unordered_set": 1,
+        "std::list": 1, "std::deque": 1,
+        "std::pair": 2, "std::string": 0,
+    }
+    """
+    Dictionary of the amount of arguments each
+    STL type has in its 'sugar' type,
+    used to collapse them in `STLUtils.collapse_stl_type`.
+    """
 
     @staticmethod
     def format_ptr(pt: str) -> str:
@@ -94,37 +114,31 @@ class STLUtils:
         return t
 
     @staticmethod
-    def split_stl_type(stl_t: str) -> STL_TREE:
+    def split_stl_type(stl_t: str) -> "STLNode":
         """
         Splits an STL type string into a list of STL type name
-        and contained types. This function assumes `stl_t` types are
-        normalized first using `normalize_type`.
+        and contained types.
 
         Args:
-            stl_t (str): STL type string.
+            stl_t (str): STL type string. Assumed to be
+                normalized first using `STLUtils.normalize_type`.
 
         Returns:
-            list[str | list[str]]: if stl_t is "std::type<const T1, T2*>&" then
-                ["", "std::type", ["const", "T1", ""], ["", "T2, "*"], "&"] will
-                be returned.
+            STLNode
         """  # noqa: E501
         stl_t = stl_t.strip()
-        ptr = ""
-        const = ""
 
-        # extract trailing pointer/reference
-        if stl_t[-1] in ("*", "&"):
-            ptr = stl_t[-1]
+        ptr = stl_t[-1] if stl_t[-1] in ("*", "&") else ""
+        if ptr:
             stl_t = stl_t[:-1].rstrip()
 
-        # extract leading const
-        if stl_t.startswith("const "):
-            const = "const"
-            stl_t = stl_t[6:].lstrip()  # len("const ") == 6
+        const = "const" if stl_t.startswith("const ") else ""
+        if const:
+            stl_t = stl_t[len("const "):].lstrip()
 
         stripped = STLUtils.strip_crp(stl_t)
         if "std::" not in stl_t or stripped == "std::string":
-            return [const, stripped, ptr]
+            return STLNode(const, stripped, ptr=ptr)
 
         # find the outermost template bracket
         template_start = stl_t.index("<")
@@ -132,31 +146,22 @@ class STLUtils:
         # everything between outermost < and >
         inner = stl_t[template_start + 1:stl_t.rindex(">")]
 
-        result: STL_TREE = [const, type_name]
+        args: list[STLNode] = []
+        depth = 0
+        token_start = 0
 
-        # split inner by commas at nest depth 0
-        nest_count = 0
-        current_token = ""
-
-        for i, c in enumerate(inner):
+        for i, c in enumerate(inner + ","):
             if c == "<":
-                nest_count += 1
+                depth += 1
             elif c == ">":
-                nest_count -= 1
-
-            if nest_count == 0 and (c == "," or i == len(inner) - 1):
-                if i == len(inner) - 1 and c != ",":
-                    current_token += c
-
-                result.append(
-                    STLUtils.split_stl_type(current_token.strip())
+                depth -= 1
+            elif c == "," and depth == 0:
+                args.append(
+                    STLUtils.split_stl_type(inner[token_start:i].strip())
                 )
-                current_token = ""
-            else:
-                current_token += c
+                token_start = i + 1
 
-        result.append(ptr)
-        return result
+        return STLNode(const, type_name, args, ptr)
 
     @staticmethod
     def expand_stl_type(stl_t: str) -> str:
@@ -167,63 +172,45 @@ class STLUtils:
         "std::map<int, int, std::less<int>, std::allocator<std::pair<const int, int>>>"
 
         Args:
-            stl_t (str): The unexpanded STL type
+            stl_t (str): Unexpanded STL type. Assumed to be
+                normalized first using `STLUtils.normalize_type`.
 
         Returns:
             str
-        """  # noqa: E501
-        def flatten_and_expand(s: STL_TREE) -> str:
-            r: list[str] = []
+        """
+        def expand_node(node: STLNode) -> str:
+            if not node.is_stl:
+                return f"{node.const} {node.name}{node.ptr}".lstrip()
 
-            for i, t in enumerate(s):
-                if isinstance(t, str):
-                    if "std::" not in t:
-                        r.append(t)
-                        continue
+            if node.name == "std::string":
+                return f"{node.const} {STLUtils.STL_EXPANSION_MAP['std::string']}{node.ptr}".lstrip()
 
-                    if t == "std::string":
-                        return "{} {}{}".format(
-                            cast(str, s[0]),
-                            STLUtils.STL_EXPANSION_MAP["std::string"],
-                            cast(str, s.pop(-1))
-                        ).lstrip()
+            template = STLUtils.STL_EXPANSION_MAP[node.name]
+            expanded_args = [expand_node(arg) for arg in node.args]
 
-                    expanded_stl_t = STLUtils.STL_EXPANSION_MAP[t]
+            return f"{node.const} {template.format(*expanded_args)}{node.ptr}".lstrip()
 
-                    r.append(expanded_stl_t)
+        return expand_node(STLUtils.split_stl_type(stl_t))
 
-                    if "std::" in s[i + 1][1]:
-                        r.append(flatten_and_expand(cast(list, s.pop(i + 1))))
-                    else:
-                        contained = cast(list[str], s.pop(i + 1))
-                        r.append("{} {}{}".format(*contained).lstrip())
+    @staticmethod
+    def collapse_stl_type(node: "STLNode") -> "STLNode":
+        """
+        Collapse an STL type back to its 'sugar'
+        format.
 
-                    if STLUtils.has_two_templates(expanded_stl_t):
-                        if "std::" in s[i + 1][1]:
-                            r.append(
-                                flatten_and_expand(cast(list, s.pop(i + 1)))
-                            )
-                        else:
-                            contained = cast(list[str], s.pop(i + 1))
-                            r.append("{} {}{}".format(*contained).lstrip())
+        Args:
+            node (STLNode)
 
-                    # 0 is const or empty
-                    # 1 is stl format string
-                    # whatever after are its arguments
-                    # -1 is ptr or reference
-                    r = [
-                        "{} {}{}".format(
-                            r[0],
-                            r[1].format(*r[2:]),
-                            s.pop(-1)
-                        ).lstrip()
-                    ]
+        Returns:
+            STLNode
+        """
+        if not node.is_stl or node.name not in STLUtils.STL_CORE_ARITY:
+            return STLNode(node.const, node.name, [], node.ptr)
 
-                    continue
+        arity = STLUtils.STL_CORE_ARITY[node.name]
+        core_args = [STLUtils.collapse_stl_type(a) for a in node.args[:arity]]
 
-            return r[0]
-
-        return flatten_and_expand(STLUtils.split_stl_type(stl_t))
+        return STLNode(node.const, node.name, core_args, node.ptr)
 
     @staticmethod
     def stl_value_types(
@@ -231,40 +218,34 @@ class STLUtils:
     ) -> list[tuple[str, bool]]:
         """
         Walk split_stl_type tree, yielding (bare_type, is_by_value)
-        for every leaf type.
+        tuples in a list for every leaf type.
+
+        Args:
+            raw (str): Raw string of the type. Assumed to be
+                normalized first using `STLUtils.normalize_type`.
+
+        Returns:
+            list[tuple[str, bool]]: [(stripped_leaf_type, is_by_value), ...]
         """
-        tree = STLUtils.split_stl_type(raw)
         results: list[tuple[str, bool]] = []
 
-        def walk(node, parent_by_value: bool = True):
-            # STL_Tree list
-            if isinstance(node, list):
-                ptr_slot = node[-1] if isinstance(node[-1], str) else ""
-                by_value = "*" not in ptr_slot and "&" not in ptr_slot
+        def walk(node: "STLNode"):
+            if node.args:
+                for arg in node.args:
+                    walk(arg)
+                return
 
-                for item in node:
-                    if isinstance(item, list):
-                        walk(item, by_value)
-                    elif isinstance(item, str):
-                        if item in ("const", "*", "&", ""):
-                            continue
-                        if item.startswith("std::"):
-                            continue
+            if node.is_stl or not node.name:
+                return
 
-                        bare = STLUtils.strip_crp(item)
-                        if bare:
-                            results.append((bare, by_value))
-            elif isinstance(node, str):
-                if node in ("const", "*", "&", ""):
-                    return
-                if node.startswith("std::"):
-                    return
+            bare = STLUtils.strip_crp(node.name)
+            if not bare:
+                return
 
-                bare = STLUtils.strip_crp(node)
-                if bare:
-                    results.append((bare, parent_by_value))
+            by_value = "*" not in node.ptr and "&" not in node.ptr
+            results.append((bare, by_value))
 
-        walk(tree)
+        walk(STLUtils.split_stl_type(raw))
         return results
 
 

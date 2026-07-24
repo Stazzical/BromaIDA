@@ -2,14 +2,14 @@ from typing import Callable, Self
 
 from ida_kernwin import Form
 
-from broma_ida.metadata import SCRIPT_VERSION, PLUGIN_NAME
+from broma_ida.metadata import __version__, PLUGIN_NAME, PLUGIN_DESCRIPTION
 
 from broma_ida.ui.types.dynamic_form import DynamicForm
 from broma_ida.ui.settings_form import SettingsForm
 
 
 class MainForm(DynamicForm):
-    """Main form"""
+    """Main form."""
 
     version: str
     on_import_button: Callable[[Self, int], None]
@@ -25,18 +25,21 @@ class MainForm(DynamicForm):
         self.on_export_button = on_export_button
 
         super().__init__(f"""STARTITEM 0
+BUTTON YES NONE
+BUTTON NO NONE
 BUTTON CANCEL Cancel
 {PLUGIN_NAME}
 
 {{cMainLabel}}
 {{cPlatformLabel}}
 
-Select Mode:<##Import:{{iImportButton}}><##Export:{{iExportButton}}>
+Select Mode:
+<##~Import:{{iImportButton}}><##~Export:{{iExportButton}}>
 
-<Settings:{{iSettingsButton}}>
+<~Settings:{{iSettingsButton}}>
 """, {
             "cMainLabel": Form.StringLabel(
-                f"{PLUGIN_NAME} v{SCRIPT_VERSION}.\nBroma support for IDA."
+                f"{PLUGIN_NAME} v{__version__}.\n{PLUGIN_DESCRIPTION}"
             ),
             "cPlatformLabel": Form.StringLabel(
                 f"Current Platform: {platform}"

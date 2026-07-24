@@ -437,6 +437,60 @@ class IDAUtils:
         return False
 
     @staticmethod
+    def get_type_info(name: str) -> ida_tinfo_t | None:
+        """
+        Gets the info about a type/struct.
+
+        Args:
+            name (str): The name of the type/struct.
+
+        Returns:
+            ida_typeinf.tinfo_t | None
+        """
+        tif = ida_tinfo_t()
+        return tif if tif.get_named_type(get_idati(), name) else None
+
+    @staticmethod
+    def is_corrupted_type(t: ida_tinfo_t | None) -> bool:
+        """
+        True only if `t` exists but is structurally broken
+        (BADADDR size or an unresolved forward-declaration).
+
+        Args:
+            t (ida_typeinf.tinfo_t | None)
+
+        Returns:
+            bool
+        """
+        return t is not None and (t.get_size() == BADADDR or t.is_forward_decl())
+
+    @staticmethod
+    def types_equivalent(name_a: str, name_b: str) -> bool:
+        """
+        True if two bare type names refer to the same underlying IDA type,
+        resolving through typedef aliases (e.g. cocos2d::ccColor3B and
+        cocos2d::_ccColor3B naming the same anonymous struct under the hood).
+        Falls back to False if either name isn't a registered type yet.
+
+        Args:
+            name_a (str)
+            name_b (str)
+
+        Returns:
+            bool
+        """
+        if name_a == name_b:
+            return True
+
+        tif_a = IDAUtils.get_type_info(name_a)
+        tif_b = IDAUtils.get_type_info(name_b)
+
+        if tif_a is None or tif_b is None:
+            return False
+
+        return tif_a.equals_to(tif_b)
+
+    @staticmethod
     def get_dirtree_entries(
         tree: TreeType,
         path: str = "/"

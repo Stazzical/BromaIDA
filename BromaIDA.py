@@ -1,4 +1,5 @@
 from pathlib import Path
+from platformdirs import PlatformDirs
 
 from ida_idaapi import (
     plugin_t as ida_plugin_t,
@@ -14,9 +15,8 @@ from idautils import Names
 from ida_auto import auto_is_ok
 
 from broma_ida.metadata import (
-    SCRIPT_VERSION,
-    PLUGIN_NAME,
-    PLUGIN_HOTKEY
+    __version__,
+    PLUGIN_NAME, PLUGIN_DESCRIPTION, PLUGIN_HOTKEY
 )
 from broma_ida.utils import stop, path_exists, IDAUtils
 from broma_ida.broma.importer import BromaImporter
@@ -27,6 +27,9 @@ from broma_ida.data.data_manager import DataManager
 from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.main_form import MainForm
 from broma_ida.ui.directory_input_form import DirectoryInputForm
+
+
+SHELF_DIR = PlatformDirs(appname=PLUGIN_NAME, appauthor=False)
 
 
 def check_auto_analysis() -> bool:
@@ -69,15 +72,19 @@ def on_import(form: MainForm, code: int = 0):
 
     bromas_dir = str(dir_form.saved_controls.iDir)
 
-    broma_importer = BromaImporter(platform, Path(bromas_dir))
+    broma_importer = BromaImporter(
+        platform,
+        Path(__file__).resolve().parent / "broma_ida" / "types",
+        Path(bromas_dir)
+    )
     broma_importer.parse_bromas()
     broma_importer.import_into_idb()
 
-    print("[+] BromaIDA: Finished importing bindings from Broma files.")
     SimplePopup(
         "Finished importing "
         f"{IDAUtils.get_platform_printable()} "
-        "bindings from Broma files.",
+        f"bindings {'and types ' if broma_importer.has_types else ''}"
+        "from Broma files.",
         "OK"
     ).show()
 
@@ -126,7 +133,7 @@ def on_export(form: MainForm, code: int = 0):
 def bida_main():
     """Plugin main entrypoint."""
     DataManager().init(
-        Path.home() / "broma_ida" / "shelf"
+        SHELF_DIR.user_config_path / "shelf"
     )
 
     form_code = MainForm(
@@ -150,13 +157,13 @@ class BromaIDAPlugin(ida_plugin_t):
 
     def init(self):
         """Ran on plugin load."""
-        ida_msg(f"{PLUGIN_NAME} v{SCRIPT_VERSION} initialized\n")
+        ida_msg(f"{PLUGIN_NAME} v{__version__} initialized.\n")
 
         return IDA_PLUGIN_KEEP
 
     def term(self):
         """Ran on plugin unload."""
-        ida_msg(f"{PLUGIN_NAME} v{SCRIPT_VERSION} unloaded\n")
+        ida_msg(f"{PLUGIN_NAME} v{__version__} unloaded.\n")
 
     def run(self, arg):
         """Ran on "File -> Script File"

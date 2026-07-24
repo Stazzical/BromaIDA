@@ -27,6 +27,37 @@ class FunctionSignature:
     is_inline: bool = False
     is_missing: bool = False
 
+    @staticmethod
+    def _extract_common(f: FunctionBindField | Function) -> dict:
+        """Shared field extraction for from_field/from_freefunc classmethods."""
+        proto = f.prototype
+        platform = IDAUtils.get_platform()
+        # get address as an int at base of 16 (hexadecimal int)
+        # here we only use it to know if the function was inlined
+        # or missing on the target platform
+
+        # -2 is explicitly inlined, -1 is not found
+        raw_addr = getattr(f.binds, platform, -1)
+        missing = (
+            platform in proto.attrs.missing
+            or BROMA_PLATFORM_GROUPS.get(platform) in proto.attrs.missing
+        )
+
+        return {
+            "name": proto.name,
+            "ret": RetType(proto.ret.name),
+            "parameters": [
+                ArgType(arg_t.name, param_name)
+                for param_name, arg_t in proto.args.items()
+            ],
+            "is_virtual": getattr(proto, "is_virtual", False),
+            "is_static": getattr(proto, "is_static", False),
+            "is_const": getattr(proto, "is_const", False),
+            "is_inline": raw_addr == -2,
+            "is_missing": missing,
+            "_raw_addr": raw_addr,
+        }
+
     @classmethod
     def from_field(
         cls,
@@ -44,37 +75,9 @@ class FunctionSignature:
         Returns
             FunctionSignature
         """
-        proto = f.prototype
-        platform = str(IDAUtils.get_platform())
-        # get address as an int at base of 16 (hexadecimal int)
-        # here we only use it to know if the function was inlined
-        # or missing on the target platform
-
-        # -2 is explicitly inlined, -1 is not found
-        raw_addr = getattr(
-            f.binds,
-            platform,
-            -1
-        )
-        missing = (
-            platform in proto.attrs.missing
-            or BROMA_PLATFORM_GROUPS.get(platform) in proto.attrs.missing
-        )
-
-        return cls(
-            name=proto.name,
-            class_name=class_name,
-            ret=RetType(proto.ret.name),
-            parameters=[
-                ArgType(arg_t.name, param_name)
-                for param_name, arg_t in proto.args.items()
-            ],
-            is_virtual=proto.is_virtual,
-            is_static=proto.is_static,
-            is_const=proto.is_const,
-            is_inline=(raw_addr == -2),
-            is_missing=missing
-        )
+        data = cls._extract_common(f)
+        data.pop("_raw_addr")
+        return cls(class_name=class_name, **data)
 
     @cached_property
     def qualified_name(self) -> str:
@@ -84,7 +87,7 @@ class FunctionSignature:
         Returns:
             str: ClassName::MethodName
         """
-        return f"{self.class_name + '::' if self.class_name is not '' else ''}{self.name}"
+        return f"{self.class_name + '::' if self.class_name != '' else ''}{self.name}"
 
     @cached_property
     def ida_qualified_name(self) -> str:
@@ -216,39 +219,12 @@ class Binding(FunctionSignature):
         Returns
             Binding
         """
-        proto = f.prototype
-        platform = str(IDAUtils.get_platform())
-        raw_addr = getattr(
-            f.binds,
-            platform,
-            -1
-        )
-        missing = (
-            platform in proto.attrs.missing
-            or BROMA_PLATFORM_GROUPS.get(platform) in proto.attrs.missing
-        )
-
-        return cls(
-            name=proto.name,
-            class_name=class_name,
-            ret=RetType(proto.ret.name),
-            parameters=[
-                ArgType(arg_t.name, param_name)
-                for param_name, arg_t in proto.args.items()
-            ],
-            is_virtual=proto.is_virtual,
-            is_static=proto.is_static,
-            is_const=proto.is_const,
-            is_inline=(raw_addr == -2),
-            is_missing=missing,
-            address=raw_addr
-        )
+        data = cls._extract_common(f)
+        address = data.pop("_raw_addr")
+        return cls(class_name=class_name, address=address, **data)
 
     @classmethod
-    def from_freefunc(
-        cls,
-        f: Function
-    ) -> "Binding":
+    def from_freefunc(cls, f: Function) -> "Binding":
         """
         Get a Binding class instance of a free
         function from its Function instance.
@@ -259,30 +235,13 @@ class Binding(FunctionSignature):
         Returns
             Binding
         """
-        proto = f.prototype
-        platform = str(IDAUtils.get_platform())
-        raw_addr = getattr(
-            f.binds,
-            platform,
-            -1
-        )
-        missing = (
-            platform in proto.attrs.missing
-            or BROMA_PLATFORM_GROUPS.get(platform) in proto.attrs.missing
-        )
-
-        return cls(
-            name=proto.name,
-            class_name="",
-            ret=RetType(proto.ret.name),
-            parameters=[
-                ArgType(arg_t.name, param_name)
-                for param_name, arg_t in proto.args.items()
-            ],
-            is_inline=(raw_addr == -2),
-            is_missing=missing,
-            address=raw_addr
-        )
+        data = cls._extract_common(f)
+        address = data.pop("_raw_addr")
+        # free functions have no virtual/static/const concept
+        data["is_virtual"] = False
+        data["is_static"] = False
+        data["is_const"] = False
+        return cls(class_name="", address=address, **data)
 
     @cached_property
     def has_address(self) -> bool:
