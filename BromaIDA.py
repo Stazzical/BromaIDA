@@ -28,6 +28,8 @@ from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.main_form import MainForm
 from broma_ida.ui.directory_input_form import DirectoryInputForm
 
+from pybroma import __version__ as pybroma_version
+
 
 SHELF_DIR = PlatformDirs(appname=PLUGIN_NAME, appauthor=False)
 
@@ -157,7 +159,7 @@ class BromaIDAPlugin(ida_plugin_t):
 
     def init(self):
         """Ran on plugin load."""
-        ida_msg(f"{PLUGIN_NAME} v{__version__} initialized.\n")
+        ida_msg(f"{PLUGIN_NAME} v{__version__} initialized. Using PyBroma version v{pybroma_version}.\n    {self.help}\n")
 
         return IDA_PLUGIN_KEEP
 

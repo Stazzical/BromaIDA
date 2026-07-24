@@ -121,7 +121,7 @@ class ClassGraph:
 
             if ff is not None:
                 process_type(ff.prototype.ret.name)
-                for arg_t in ff.prototype.args.values():
+                for _, arg_t in ff.prototype.args:
                     process_type(arg_t.name)
 
                 if ff.prototype.is_virtual:

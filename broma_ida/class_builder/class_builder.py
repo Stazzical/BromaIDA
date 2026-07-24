@@ -46,15 +46,7 @@ class ClassBuilder:
             pad_field = field.getAsPadField()
 
             if member_field is not None:
-                present = (
-                    len(member_field.platform) == 0
-                    or (
-                        str(self._target_platform) in member_field.platform
-                        or BROMA_PLATFORM_GROUPS.get(str(self._target_platform)) in member_field.platform
-                    )
-                )
-
-                if not present:
+                if not str(self._target_platform) in member_field.platform:
                     continue
 
                 if has_left_functions:
@@ -68,24 +60,16 @@ class ClassBuilder:
                 } {member_field.name};\n"""
 
             elif pad_field is not None:
-                # skip other members because no padding for current platform (why)
-                if self._target_platform not in \
-                        pad_field.amount.platforms_as_dict():
-                    break
+                pad_amount = pad_field.amount.for_platform(self._target_platform)
 
-                pad_amount = pad_field.amount.platforms_as_dict()[
-                    self._target_platform
-                ]
-
-                # thank you andy pads
-                if pad_amount == 0:
+                if pad_amount is None or pad_amount == 0:
                     continue
 
                 if has_left_functions:
                     body += "\n"
                     has_left_functions = False
 
-                body += f"\tPAD({pad_amount});\n"
+                body += f"\tPAD(0x{pad_amount:x});\n"
 
         bases = ", ".join(
             f"public {cls}" for cls in self._broma_class.superclasses

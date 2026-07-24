@@ -38,23 +38,19 @@ class FunctionSignature:
 
         # -2 is explicitly inlined, -1 is not found
         raw_addr = getattr(f.binds, platform, -1)
-        missing = (
-            platform in proto.attrs.missing
-            or BROMA_PLATFORM_GROUPS.get(platform) in proto.attrs.missing
-        )
 
         return {
             "name": proto.name,
             "ret": RetType(proto.ret.name),
             "parameters": [
                 ArgType(arg_t.name, param_name)
-                for param_name, arg_t in proto.args.items()
+                for param_name, arg_t in proto.args
             ],
             "is_virtual": getattr(proto, "is_virtual", False),
             "is_static": getattr(proto, "is_static", False),
             "is_const": getattr(proto, "is_const", False),
             "is_inline": raw_addr == -2,
-            "is_missing": missing,
+            "is_missing": platform in proto.attrs.missing,
             "_raw_addr": raw_addr,
         }
 

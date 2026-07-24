@@ -604,12 +604,7 @@ class BromaImporter:
     def _load_broma_classes(self):
         for bfile, root in self._broma_files.items():
             for cls in root.classes:
-                missing = (
-                    self._target_platform in cls.attrs.missing
-                    or BROMA_PLATFORM_GROUPS.get(self._target_platform) in cls.attrs.missing
-                )
-
-                if missing:
+                if self._target_platform in cls.attrs.missing:
                     continue
 
                 if cls.name in self.classes:
@@ -618,13 +613,19 @@ class BromaImporter:
                         f"({cls.name} from {bfile}) "
                         "Overwriting..."
                     )
+
+                if len(cls.fields) == 0:
+                    print(
+                        "[!] BromaImporter: Found empty class definition "
+                        f"({cls.name} from {bfile}). "
+                    )
                     
                 self.classes[cls.name] = cls
 
     def _load_broma_bindings(self):
         """Gather all the needed bindings from the Broma files."""
         # finding duplicate binds on Android is mostly impossible
-        # due to the compiler not inlining functions
+        # due to the compiler not inlining almost any functions
         if self._target_platform.startswith("android"):
             for class_name, broma_class in self.classes.items():
                 for field in broma_class.fields:
@@ -639,6 +640,9 @@ class BromaImporter:
 
             for bfile in self._broma_files.values():
                 for func in bfile.functions:
+                    if self._target_platform in func.proto.attrs.missing:
+                        continue
+
                     raw_addr = getattr(func.binds, self._target_platform, -1)
                     if raw_addr in (-1, -2):
                         continue
@@ -715,6 +719,9 @@ class BromaImporter:
 
         for bfile in self._broma_files.values():
             for func in bfile.functions:
+                if self._target_platform in func.proto.attrs.missing:
+                    continue
+
                 raw_addr = getattr(func.binds, self._target_platform, -1)
                 if raw_addr in (-1, -2):
                     continue
@@ -942,11 +949,12 @@ class BromaImporter:
                     IDAUtils.get_function_info(ida_ea),
                     binding
                 ):
-                    print(
-                        "[+] BromaImporter: Function signature mismatch between "
-                        f"Broma and IDB ({binding.short_info})! "
-                        "Attempting to correct..."
-                    )
+                    if not DataManager().get("debug_info"):
+                        print(
+                            "[+] BromaImporter: Function signature mismatch between "
+                            f"Broma and IDB ({binding.short_info})! "
+                            "Attempting to correct..."
+                        )
                     BIUtils.set_function_signature(ida_ea, binding)
 
             print(
@@ -1017,11 +1025,12 @@ class BromaImporter:
                 IDAUtils.get_function_info(ida_ea),
                 binding
             ):
-                print(
-                    "[+] BromaImporter: Function signature mismatch between "
-                    f"Broma and IDB ({binding.short_info})! "
-                    "Attempting to correct..."
-                )
+                if not DataManager().get("debug_info"):
+                    print(
+                        "[+] BromaImporter: Function signature mismatch between "
+                        f"Broma and IDB ({binding.short_info})! "
+                        "Attempting to correct..."
+                    )
                 BIUtils.set_function_signature(ida_ea, binding)
 
             if ida_name.startswith("sub_"):
