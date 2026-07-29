@@ -292,7 +292,7 @@ class IDAUtils:
             return "none"
 
         # TODO: support new clang parser in IDA 9.2+
-        return "clang" if IDA_SDK_VERSION < 900 else "old_clang"
+        return "clang" if IDA_SDK_VERSION < 920 else "old_clang"
 
     @staticmethod
     @cache
@@ -479,8 +479,8 @@ class IDAUtils:
         Returns:
             bool
         """
-        if name_a == name_b:
-            return True
+        if name_a == "" or name_b == "":
+            return False
 
         tif_a = IDAUtils.get_type_info(name_a)
         tif_b = IDAUtils.get_type_info(name_b)

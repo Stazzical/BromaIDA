@@ -152,7 +152,7 @@ def bida_main():
 class BromaIDAPlugin(ida_plugin_t):
     """IDA plugin instance."""
     flags = IDA_PLUGIN_PROC
-    comment = "Broma support for IDA."
+    comment = PLUGIN_DESCRIPTION
     help = f"Press {PLUGIN_HOTKEY} to begin importing/exporting bindings."
     wanted_name = PLUGIN_NAME
     wanted_hotkey = PLUGIN_HOTKEY
