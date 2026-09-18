@@ -5,8 +5,7 @@ from pybroma import Class
 
 from broma_ida.data.data_manager import DataManager
 from broma_ida.broma.binding import FunctionSignature
-from broma_ida.broma.argtype import STLUtils
-from broma_ida.utils import CppUtils
+from broma_ida.utils import CppUtils, STLUtils
 
 
 @dataclass(frozen=True, slots=True)

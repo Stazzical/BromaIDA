@@ -31,12 +31,15 @@ from ida_nalt import (
 
 from pybroma import Root, Class, FunctionBindField
 
-from broma_ida.broma.argtype import STLNode, STLUtils, ArgType
+from broma_ida.broma.argtype import ArgType
 from broma_ida.broma.constants import BROMA_PLATFORMS, IDACallingConvention
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.codegen import BromaCodegen
 from broma_ida.broma.class_graph import STLStubDefinition, STLTypeDefinitions, ClassGraph
-from broma_ida.utils import path_exists, CppUtils
+from broma_ida.utils import (
+    path_exists,
+    CppUtils, STLNode, STLUtils
+)
 from broma_ida.ida_utils import (
     IDAUtils, DirtreeEntry,
     stop, HAS_IDACLANG
