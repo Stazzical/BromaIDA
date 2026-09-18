@@ -1,63 +1,7 @@
-from typing import Callable, NoReturn
-from functools import cache
-
-from ida_idaapi import BADADDR
-from ida_kernwin import ASKBTN_BTN1
-from ida_name import (
-    get_name_ea,
-    SN_NOWARN, set_name
-)
-from ida_diskio import idadir
-from ida_ida import inf_get_filetype, f_PE, f_MACHO, f_ELF
-from ida_segment import (
-    get_first_seg, get_segm_by_name
-)
-from ida_bytes import get_dword, get_bytes
-from ida_loader import get_path, PATH_TYPE_IDB
-from ida_funcs import (
-    func_t as ida_func_t, FUNC_LIB
-)
-from ida_typeinf import (
-    func_type_data_t as ida_func_type_data_t,
-    tinfo_t as ida_tinfo_t,
-    get_idati
-)
-from ida_nalt import (
-    get_tinfo, retrieve_input_file_md5,
-    get_imagebase
-)
-from ida_dirtree import (
-    get_std_dirtree,
-    dirtree_visitor_t as ida_dirtree_visitor_t,
-    dirtree_cursor_t as ida_dirtree_cursor_t,
-    direntry_t as ida_direntry_t,
-    dirtree_t as ida_dirtree_t
-)
-from ida_pro import IDA_SDK_VERSION
-
-from struct import unpack
+from typing import Final
 from pathlib import Path
-from hashlib import sha256
-
-from broma_ida.broma.constants import BROMA_PLATFORMS
-from broma_ida.ui.ask_popup import AskPopup
-
-HAS_IDACLANG = False
-try:
-    import ida_srclang
-    del ida_srclang
-    HAS_IDACLANG = True
-except ModuleNotFoundError:
-    pass
-
-
-TreeType = int | ida_dirtree_t
-DirtreeEntry = tuple[ida_direntry_t, str]
-
-
-def stop(reason: str | None = None) -> NoReturn:
-    """Kills the plugin process."""
-    raise SystemExit if reason is None else Exception(reason)
+from re import sub, compile
+from dataclasses import dataclass, field
 
 
 def path_exists(path: str, ext: str = "") -> bool:
@@ -82,492 +26,299 @@ def path_exists(path: str, ext: str = "") -> bool:
         return p_path.suffix == ext and p_path.exists()
 
 
-class IDAUtils:
-    """Collection of utilities to work with IDA indirectly."""
+class CppUtils:
+    """General C++ type utilities."""
 
-    # Mach-O Load commands
-    _MINIMUM_OS_VERSION_LOAD_COMMAND = 0x32
+    _KEYWORD_NOISE_RE: Final = compile(r"\b(class|struct|enum)\s+")
+    """MSVC-only elaborated-type keywords."""
 
-    # Mach-O CPU types
-    _CPU_TYPE_ARM64 = 0x0100000c
-    _CPU_TYPE_X86_64 = 0x01000007
+    _BAD_DECORATOR_RE: Final = compile(r"[*&]\s*<")
 
-    # Mach-O Platform types
-    _PLATFORM_TYPE_MACOS = 0x1
-    _PLATFORM_TYPE_IOS = 0x2
+    @staticmethod
+    def format_ptr(pt: str) -> str:
+        """IDA is east pointer (ew)"""
+        return sub(r"([^ ])\*", r"\1 *", pt)
 
-    _plat_to_printable = {
-        "win": "Windows",
-        "imac": "Intel MacOS",  # MacchewOS my beloved
-        "m1": "M1 MacOS",
-        "ios": "iOS",
-        "android32": "Android (32-bit)",
-        "android64": "Android (64-bit)"
+    @staticmethod
+    def to_ida_equivalent(t: str) -> str:
+        """
+        IDA always resolves references into raw pointers internally,
+        so a canonical type's '&' needs to become '*' before comparing
+        against anything sourced from IDA.
+        """
+        # as of now, the 'geode::' namespace is only for SeedValue classes
+        # they're put in 'helpers.hpp'; this won't be needed when we finish
+        # the sdk parser.
+        return t.replace("geode::", "").replace("&", "*")
+
+    @staticmethod
+    def strip_crp(tt: str) -> str:
+        """Strips const and any number of pointer/reference decorators."""
+        tt = tt.strip()
+        while tt and tt[-1] in ("*", "&"):
+            tt = tt[:-1].rstrip()
+        return tt.removeprefix("const ").removesuffix(" const").strip()
+
+    @staticmethod
+    def normalize_type(t: str) -> str:
+        """
+        Normalize the type string to the following standards:
+        - gd:: -> std::
+        - east `const` moved to west position
+        - pointer/reference attached to type with no spaces
+        - whitespace cleaned up with one space after each
+            templated type argument
+
+        Args:
+            t (str)
+
+        Returns:
+            str
+        """
+        t = t.strip().replace("gd::", "std::")
+
+        # you darn whitespaces get off my property!!
+        t = sub(r"\s+", " ", t)
+        t = sub(r"\s*,\s*", ", ", t)
+        t = sub(r"<\s+", "<", t)
+        t = sub(r"\s+>", ">", t)
+
+        # normalize east const to west const
+        t = sub(
+            r"^((?:(?!const\s*[*&]).)+?)\s+const\s*([*&])$",
+            r"const \1\2",
+            t
+        )
+
+        # normalize east pointer/reference to west pointer/reference
+        t = sub(r"\s+([*&])", r"\1", t)
+
+        return t
+
+    @staticmethod
+    def split_top_level(arg_str: str) -> list[str]:
+        """
+        Splits a string of function arguments on top-level
+        commas only, respecting nested <>/() depth.
+
+        Args:
+            arg_str (str)
+
+        Returns:
+            list[str]
+        """
+        arg_str = arg_str.strip()
+        if arg_str in ("", "void"):
+            return []
+
+        args, depth, start = [], 0, 0
+        for i, c in enumerate(arg_str + ","):
+            if c in "<(":
+                depth += 1
+            elif c in ">)":
+                depth -= 1
+            elif c == "," and depth == 0:
+                args.append(arg_str[start:i].strip())
+                start = i + 1
+
+        return args
+
+    @staticmethod
+    def looks_malformed(raw: str) -> bool:
+        """Checks if there are incorrect patterns in the demangle."""
+        # i don't know if this is actually needed, but some demangles in IDA looked wrong
+        return bool(CppUtils._BAD_DECORATOR_RE.search(raw))
+
+    @staticmethod
+    def clean_demangled_type(raw: str) -> str:
+        """Cleans demangle string from mangler extra noise."""
+        cleaned = CppUtils._KEYWORD_NOISE_RE.sub("", raw)
+        # cleaned = CppUtils._INLINE_NAMESPACE_RE.sub("", cleaned)
+        return CppUtils.normalize_type(cleaned)
+
+
+@dataclass(slots=True)
+class STLNode:
+    """Node dataclass type for keeping structured info of a C++ STL type."""
+
+    const: str
+    name: str
+    """The actual type."""
+    args: list["STLNode"] = field(default_factory=list)
+    ptr: str = ""
+
+    @property
+    def is_stl(self) -> bool:
+        return "std::" in self.name
+
+
+class STLUtils:
+    """STL utilities."""
+
+    STL_EXPANSION_MAP: Final = {
+        "std::map": "std::map<{0}, {1}, std::less<{0}>, std::allocator<std::pair<const {0}, {1}>>>",  # noqa: E501
+        "std::unordered_map":
+            "std::unordered_map<{0}, {1}, std::hash<{0}>, std::equal_to<{0}>, std::allocator<std::pair<const {0}, {1}>>>",  # noqa: E501
+        "std::vector": "std::vector<{0}, std::allocator<{0}>>",
+        "std::set": "std::set<{0}, std::less<{0}>, std::allocator<{0}>>",
+        "std::unordered_set": "std::unordered_set<{0}, std::hash<{0}>, std::equal_to<{0}>, std::allocator<{0}>>",  # noqa: E501
+        "std::list": "std::list<{0}, std::allocator<{0}>>",
+        "std::deque": "std::deque<{0}, std::allocator<{0}>>",
+
+        # ditto
+        "std::pair": "std::pair<{0}, {1}>",
+
+        # not really a templated type, but whatever
+        "std::string": "std::basic_string<char, std::char_traits<char>, std::allocator<char>>"  # noqa: E501
     }
+    """Dictionary of STL types to their expanded forms."""
 
-    class DirtreeCollector(ida_dirtree_visitor_t):
-        def __init__(self, tree: TreeType, path: str, top: bool = True):
-            ida_dirtree_visitor_t.__init__(self)
-
-            self.tree = get_std_dirtree(tree) \
-                if isinstance(tree, int) else tree
-            self.path = Path(path)
-            self.entries: list[DirtreeEntry] = []
-            self.top = top
-
-            self.tree.traverse(self)
-
-        def descendant_check(self, entry_path: str) -> bool:
-            return bool(Path(entry_path).relative_to(self.path)) \
-                if not self.top else Path(entry_path).parent == self.path
-
-        def visit(self, c: ida_dirtree_cursor_t, de: ida_direntry_t) -> int:
-            try:
-                entry_path = IDAUtils.get_entry_abspath(self.tree, de)
-
-                if de.valid() and entry_path != self.path.as_posix() and \
-                        self.descendant_check(entry_path):
-                    self.entries.append((de, entry_path))
-            except ValueError:
-                pass
-
-            return 0
-
-    class DirtreeExecutor(ida_dirtree_visitor_t):
-        def __init__(
-                self,
-                tree: TreeType,
-                predicate: Callable[[ida_direntry_t, str], bool],
-                func: Callable[[ida_direntry_t, str], bool],
-                path: str,
-                top: bool = True
-        ) -> None:
-            ida_dirtree_visitor_t.__init__(self)
-
-            self.tree: ida_dirtree_t = get_std_dirtree(tree) \
-                if isinstance(tree, int) else tree
-            self.failed_entries: list[DirtreeEntry] = []
-            self.predicate = predicate
-            self.callback = func
-            self.path = Path(path)
-            self.top = top
-
-            self.tree.traverse(self)
-
-        def descendant_check(self, entry_path: str) -> bool:
-            return bool(Path(entry_path).relative_to(self.path)) \
-                if not self.top else Path(entry_path).parent == self.path
-
-        def visit(self, c: ida_dirtree_cursor_t, de: ida_direntry_t) -> int:
-            try:
-                entry_path = IDAUtils.get_entry_abspath(self.tree, de)
-
-                if de.valid() and entry_path != self.path.as_posix() and \
-                        self.descendant_check(entry_path) and \
-                        self.predicate(de, entry_path) and \
-                        not self.callback(de, entry_path):
-                    self.failed_entries.append((de, entry_path))
-            except ValueError:
-                pass
-
-            return 0
+    STL_CORE_ARITY: Final = {
+        "std::map": 2, "std::unordered_map": 2,
+        "std::vector": 1, "std::set": 1, "std::unordered_set": 1,
+        "std::list": 1, "std::deque": 1,
+        "std::pair": 2, "std::string": 0,
+    }
+    """
+    Dictionary of the amount of arguments each
+    STL type has in its 'sugar' type,
+    used to collapse them in `STLUtils.collapse_stl_type`.
+    """
 
     @staticmethod
-    def __get_minimum_mach_o_os_version() -> int:
+    def split_stl_type(stl_t: str) -> "STLNode":
         """
-        Gets the minimum OS version struct from the Mach-O header.
-
-        Returns:
-            int: -1 if it couldn't find MOSV load command
-        """
-        start = get_imagebase()
-        magic = get_dword(start)
-
-        if magic == 0xFEEDFACF:
-            header_size = 32  # 64-bit Mach-O header size
-        else:
-            header_size = 28  # 32-bit Mach-O header size
-
-        mach_header = get_bytes(start, header_size)
-        magic_number, cpu_type, cpu_subtype, file_type, \
-            ncmds, cmds_size, flags, reserved = \
-            unpack("<IIIIIIII", mach_header)
-
-        offset = start + header_size
-
-        for _ in range(ncmds):
-            cmd_header = get_bytes(offset, 8)
-            if not cmd_header or len(cmd_header) < 8:
-                break
-
-            cmd, cmdsize = unpack("<II", cmd_header)
-
-            if cmd == IDAUtils._MINIMUM_OS_VERSION_LOAD_COMMAND:
-                minimum_os_version_struct = get_bytes(offset, 24)
-                commandtype, cmd_size, platform_type, min_os_ver, sdk_ver, \
-                    num_tools = unpack("<IIIIII", minimum_os_version_struct)
-
-                return platform_type
-
-            offset += cmdsize
-
-        return -1
-
-    @staticmethod
-    @cache
-    def get_platform() -> BROMA_PLATFORMS:
-        """
-        Gets the currently open binary's target platform.
-        Raises a `RuntimeError` if detection fails.
-
-        Returns:
-            BROMA_PLATFORMS
-        """
-        file_type = inf_get_filetype()
-
-        if file_type == f_PE:
-            return "win"
-        elif file_type == f_MACHO:
-            cpu_type = get_dword(
-                get_segm_by_name("HEADER").start_ea + 4
-            )
-
-            if cpu_type == IDAUtils._CPU_TYPE_ARM64:
-                platform_type = IDAUtils.__get_minimum_mach_o_os_version()
-
-                if platform_type == IDAUtils._PLATFORM_TYPE_IOS:
-                    return "ios"
-                elif platform_type == IDAUtils._PLATFORM_TYPE_MACOS:
-                    return "m1"
-            elif cpu_type == IDAUtils._CPU_TYPE_X86_64:
-                return "imac"
-        elif file_type == f_ELF:
-            bitness = get_first_seg().bitness
-
-            if bitness == 0x1:
-                return "android32"
-            elif bitness == 0x2:
-                return "android64"
-
-        raise RuntimeError("no supported target platform was found for the currently open binary")
-
-    @staticmethod
-    @cache
-    def get_platform_printable() -> str:
-        """
-        Printable platform name.
-
-        Returns:
-            str
-        """
-        return IDAUtils._plat_to_printable[IDAUtils.get_platform()]
-
-    @staticmethod
-    @cache
-    def get_idb_sha256() -> str:
-        """
-        Gets a unique SHA-256 of the IDB.
-        The hash's input is "[full path of the IDB]-[binary's md5]".
-
-        Returns:
-            str
-        """
-        idb_path: str = get_path(PATH_TYPE_IDB).replace("\\", "/")
-        idb_binary_md5: str = retrieve_input_file_md5().hex()
-
-        hash_str = f"{idb_path}-{idb_binary_md5}".encode()
-
-        return sha256(hash_str).hexdigest()
-
-    @staticmethod
-    @cache
-    def get_srclang_parser() -> str:
-        """
-        Gets the current source language parser name.
-
-        Returns:
-            str
-        """
-        if not HAS_IDACLANG:
-            return "none"
-
-        # TODO: support new clang parser in IDA 9.2+
-        return "clang" if IDA_SDK_VERSION < 920 else "old_clang"
-
-    @staticmethod
-    @cache
-    def get_thunk_size() -> tuple[int] | tuple[int, int]:
-        """
-        Gets the size of a jump thunk in the current binary.
-
-        Returns:
-            int
-        """
-        platform = IDAUtils.get_platform()
-
-        # either a jmp or a lea + jmp
-        if platform in ("win"):
-            return 6, 12
-        elif platform in ("imac", "m1", "android32", "ios"):
-            return 12,
-        elif platform == "android64":
-            return 16,
-
-        return -1,
-
-    @staticmethod
-    def rename_func(addr: int, name: str, max: int = 10) -> bool:
-        """
-        Renames the function at the given address with `name`.
-        Accounts for overloads by appending _X
-        where X is a number between 1 and max (exclusive).
+        Splits an STL type string into a list of STL type name
+        and contained types.
 
         Args:
-            addr (int): The address to rename
-            name (str): The name to give it
-            max (int, optional): Maximum number of retires.
-                Defaults to 10.
+            stl_t (str): STL type string. Assumed to be
+                normalized first using `STLUtils.normalize_type`.
 
         Returns:
-            bool: True if the address has been renamed successfully
-                after maximum tries.
-        """
-        renamed = False
-
-        for i in range(max):
-            if set_name(addr, name if i == 0 else f"{name}_{i}", SN_NOWARN):
-                renamed = True
-                break
-
-        if not renamed:
-            ida_prev_addr = get_name_ea(BADADDR, name)
-            if ida_prev_addr != BADADDR and addr != ida_prev_addr:
-                if AskPopup(
-                    f"{name} is already taken at "
-                    f"{hex(ida_prev_addr - get_imagebase())} while trying to "
-                    f"rename {hex(addr)}\n"
-                    "Overwrite or keep current name?\n"
-                    "(Old location will be renamed to "
-                    f"sub_{hex(ida_prev_addr)[2:].upper()})",
-                    "Overwrite", "Keep",
-                    icon="WARNING"
-                ).show() == ASKBTN_BTN1:
-                    set_name(
-                        ida_prev_addr,
-                        f"sub_{hex(ida_prev_addr)[2:]}",
-                        SN_NOWARN
-                    )
-
-        return renamed
-
-    @staticmethod
-    def get_ida_path(path: str) -> Path:
-        """
-        Gets a path relative to the IDA root folder.
-
-        Returns:
-            Path: The path as a pathlib.Path
-        """
-        return Path(idadir(path))
-
-    @staticmethod
-    def get_function_info(
-        ida_ea: int,
-        force: bool = False
-    ) -> ida_func_type_data_t | None:
-        """
-        Gets the info of the function at the given address.
-
-        Args:
-            ida_ea (int): The function's address.
-            force (bool, optional): If the data should be forcefully
-                obtained using recovery methods like decompilation.
-                Defaults to False.
-
-        Returns:
-            ida_typeinf.func_type_data_t | None: The `ida_typeinf.func_type_data_t` of
-                the function or `None` if unable to get function info.
-        """
-        tif = ida_tinfo_t()
-        if get_tinfo(tif, ida_ea) and tif.is_func():
-            fi = ida_func_type_data_t()
-            if tif.get_func_details(fi):
-                return fi
-
-        if not force:
-            return None
-
-        try:
-            from ida_hexrays import decompile
-            cfunc = decompile(ida_ea)
-            if cfunc is not None:
-                return IDAUtils.get_function_info(ida_ea)
-        except ImportError:
-            pass
-
-        return None
-
-    @staticmethod
-    def is_library_function(func: ida_func_t) -> bool:
-        """
-        Checks if a function is a library function.
-        Has some heuristics to detect false library functions.
-
-        Args:
-            func (ida_funcs.func_t): The function to check.
-
-        Returns:
-            bool
-        """
-        if func is None:
-            return False
-
-        ida_is_lib = bool(func.flags & FUNC_LIB)
-
-        if ida_is_lib and func.size() in IDAUtils.get_thunk_size():
-            return True
-
-        # skimmed thru 2.2082 and 450 seemed to be the size where
-        # library and random garbage funcs became actual functions
-        if IDAUtils.get_platform() == "win":
-            if ida_is_lib and func.size() >= 450:
-                func.flags &= ~FUNC_LIB
-                set_name(func.start_ea, "", SN_NOWARN)
-
-        return False
-
-    @staticmethod
-    def get_type_info(name: str) -> ida_tinfo_t | None:
-        """
-        Gets the info about a type/struct.
-
-        Args:
-            name (str): The name of the type/struct.
-
-        Returns:
-            ida_typeinf.tinfo_t | None
-        """
-        tif = ida_tinfo_t()
-        return tif if tif.get_named_type(get_idati(), name) else None
-
-    @staticmethod
-    def is_corrupted_type(t: ida_tinfo_t | None) -> bool:
-        """
-        True only if `t` exists but is structurally broken
-        (BADADDR size or an unresolved forward-declaration).
-
-        Args:
-            t (ida_typeinf.tinfo_t | None)
-
-        Returns:
-            bool
-        """
-        return t is not None and (t.get_size() == BADADDR or t.is_forward_decl())
-
-    @staticmethod
-    def types_equivalent(name_a: str, name_b: str) -> bool:
-        """
-        True if two bare type names refer to the same underlying IDA type,
-        resolving through typedef aliases (e.g. cocos2d::ccColor3B and
-        cocos2d::_ccColor3B naming the same anonymous struct under the hood).
-        Falls back to False if either name isn't a registered type yet.
-
-        Args:
-            name_a (str)
-            name_b (str)
-
-        Returns:
-            bool
-        """
-        if name_a == "" or name_b == "":
-            return False
-
-        tif_a = IDAUtils.get_type_info(name_a)
-        tif_b = IDAUtils.get_type_info(name_b)
-
-        if tif_a is None or tif_b is None:
-            return False
-
-        return tif_a.equals_to(tif_b)
-
-    @staticmethod
-    def get_dirtree_entries(
-        tree: TreeType,
-        path: str = "/"
-    ) -> list[DirtreeEntry]:
-        """
-        Gets the entries of a dirtree (`dirtree_id_t`)
-
-        Args:
-            tree (int | ida_dirtree_t): The dirtree to get entries from
-            path (str, defaults to "/"): The path inside the tree
-                to get entries from
-
-        Returns:
-            list[tuple[ida_dirtree_cursor_t, ida_direntry_t]]:
-                List of tuples containing the cursor and direntry
-        """
-        tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
-
-        collector = IDAUtils.DirtreeCollector(tree, path)
-        return collector.entries
-
-    @staticmethod
-    def visit_dirtree(
-        tree: TreeType,
-        predicate: Callable[[ida_direntry_t, str], bool],
-        visit: Callable[[ida_direntry_t, str], bool],
-        path: str = "/"
-    ) -> list[DirtreeEntry]:
-        """
-        Visits dirtree entries and executes a function on them
-        if they satisfy a predicate.
-
-        Args:
-            tree (int | ida_dirtree_t): The dirtree to get entries from.
-            predicate (Callable[[ida_direntry_t, str], bool]):
-                The predicate to test entries with.
-            visit (Callable[[ida_direntry_t, str], bool]):
-                The function to execute on entries that satisfy the predicate.
-
-        Returns:
-            list[tuple[ida_direntry_t, str]]:
-                List of tuples containing the direntry and path of failed entries.
+            STLNode
         """  # noqa: E501
-        tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
+        stl_t = stl_t.strip()
+        if stl_t == "":
+            return STLNode("", "", ptr="")
 
-        executor = IDAUtils.DirtreeExecutor(tree, predicate, visit, path)
-        return executor.failed_entries
+        ptr = ""
+        while stl_t and stl_t[-1] in ("*", "&"):
+            ptr = stl_t[-1] + ptr
+            stl_t = stl_t[:-1].rstrip()
+
+        const = "const" if stl_t.startswith("const ") else ""
+        if const:
+            stl_t = stl_t[len("const "):].lstrip()
+
+        stripped = CppUtils.strip_crp(stl_t)
+        if "std::" not in stl_t or stripped == "std::string":
+            return STLNode(const, stripped, ptr=ptr)
+
+        # find the outermost template bracket
+        template_start = stl_t.index("<")
+        type_name = stl_t[:template_start].strip()
+        # everything between outermost < and >
+        inner = stl_t[template_start + 1:stl_t.rindex(">")]
+
+        args: list[STLNode] = []
+        depth = 0
+        token_start = 0
+
+        for i, c in enumerate(inner + ","):
+            if c == "<":
+                depth += 1
+            elif c == ">":
+                depth -= 1
+            elif c == "," and depth == 0:
+                args.append(
+                    STLUtils.split_stl_type(inner[token_start:i].strip())
+                )
+                token_start = i + 1
+
+        return STLNode(const, type_name, args, ptr)
 
     @staticmethod
-    def get_entry_abspath(tree: TreeType, entry: ida_direntry_t) -> str:
+    def expand_stl_type(stl_t: str) -> str:
         """
-        Gets the absolute path of the current IDA dirtree entry.
+        Expands an STL type.
+        Example:
+        "std::map<int, int>"
+        into
+        "std::map<int, int, std::less<int>, std::allocator<std::pair<const int, int>>>"
 
         Args:
-            tree (int | ida_dirtree_t): The dirtree of the entry.
-            entry (ida_direntry_t): The entry to get the path of.
+            stl_t (str): Unexpanded STL type. Assumed to be
+                normalized first using `STLUtils.normalize_type`.
 
         Returns:
             str
         """
-        tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
-        return tree.get_abspath(tree.find_entry(entry))
+        def expand_node(node: STLNode) -> str:
+            if not node.is_stl:
+                return f"{node.const} {node.name}{node.ptr}".lstrip()
+
+            if node.name == "std::string":
+                return f"{node.const} {STLUtils.STL_EXPANSION_MAP['std::string']}{node.ptr}".lstrip()
+
+            template = STLUtils.STL_EXPANSION_MAP[node.name]
+            expanded_args = [expand_node(arg) for arg in node.args]
+
+            return f"{node.const} {template.format(*expanded_args)}{node.ptr}".lstrip()
+
+        return expand_node(STLUtils.split_stl_type(stl_t))
 
     @staticmethod
-    def chdir_dirtree_entries(
-        tree: TreeType, path: str, entries: list[DirtreeEntry]
-    ) -> None:
+    def collapse_stl_type(node: "STLNode") -> "STLNode":
         """
-        Changes the directory of dirtree entries to a new path.
+        Collapse an STL type back to its 'sugar' format.
 
         Args:
-            tree (int): The dirtree of the entries.
-            path (str): The new path inside the tree.
-            entries (list[tuple[ida_dirtree_cursor_t, ida_direntry_t]]):
-                The entries to change directory.
-        """
-        tree = get_std_dirtree(tree) if isinstance(tree, int) else tree
+            node (STLNode)
 
-        for _, entry_path in entries:
-            tree.rename(f"{entry_path}", f"{path}{entry_path}")
+        Returns:
+            STLNode
+        """
+        if not node.is_stl or node.name not in STLUtils.STL_CORE_ARITY:
+            return STLNode(node.const, node.name, [], node.ptr)
+
+        arity = STLUtils.STL_CORE_ARITY[node.name]
+        core_args = [STLUtils.collapse_stl_type(a) for a in node.args[:arity]]
+
+        return STLNode(node.const, node.name, core_args, node.ptr)
+
+    @staticmethod
+    def stl_value_types(
+        raw: str
+    ) -> list[tuple[str, bool]]:
+        """
+        Walk split_stl_type tree, yielding (bare_type, is_by_value)
+        tuples in a list for every leaf type.
+
+        Args:
+            raw (str): Raw string of the type. Assumed to be
+                normalized first using `STLUtils.normalize_type`.
+
+        Returns:
+            list[tuple[str, bool]]: [(stripped_leaf_type, is_by_value), ...]
+        """
+        results: list[tuple[str, bool]] = []
+
+        def walk(node: "STLNode"):
+            if node.args:
+                for arg in node.args:
+                    walk(arg)
+                return
+
+            if node.is_stl or not node.name:
+                return
+
+            bare = CppUtils.strip_crp(node.name)
+            if not bare:
+                return
+
+            by_value = "*" not in node.ptr and "&" not in node.ptr
+            results.append((bare, by_value))
+
+        walk(STLUtils.split_stl_type(raw))
+        return results

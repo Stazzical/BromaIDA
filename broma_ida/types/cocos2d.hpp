@@ -35,13 +35,7 @@
 
 #include "stl_includes.hpp"
 #include "plat_incl.hpp"
-
-
-#ifndef PAD
-#define STR_CONCAT_WRAPPER(a, b) a ## b
-#define STR_CONCAT(a, b) STR_CONCAT_WRAPPER(a, b)
-#define PAD(size) unsigned char STR_CONCAT(__pad, __LINE__)[size]
-#endif
+#include "kazmath.hpp"
 
 // cocos macros
 #define CC_PROPERTY_READONLY(varType, varName, funName) \
@@ -210,13 +204,6 @@ public: varType get##funName(void) { return varName; }
 #else
 	#define CC_DEPRECATED_ATTRIBUTE
 #endif
-
-
-// kazmath
-#define kmScalar float
-typedef struct kmMat4 {
-	kmScalar mat[16];
-} kmMat4;
 
 
 // gl

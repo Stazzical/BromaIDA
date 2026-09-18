@@ -1,8 +1,8 @@
 from pybroma import Class
 
 from broma_ida.broma.class_graph import ClassGraph
-from broma_ida.broma.constants import BROMA_PLATFORMS, BROMA_PLATFORM_GROUPS
-from broma_ida.broma.argtype import STLUtils
+from broma_ida.broma.constants import BROMA_PLATFORMS
+from broma_ida.utils import CppUtils
 
 
 class ClassBuilder:
@@ -54,7 +54,7 @@ class ClassBuilder:
                     has_left_functions = False
 
                 body += f"""\t{
-                    STLUtils.normalize_type(
+                    CppUtils.normalize_type(
                         member_field.type.name
                     ).replace("geode::", "")
                 } {member_field.name};\n"""

@@ -6,6 +6,7 @@ from pybroma import Class
 from broma_ida.data.data_manager import DataManager
 from broma_ida.broma.binding import FunctionSignature
 from broma_ida.broma.argtype import STLUtils
+from broma_ida.utils import CppUtils
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,10 +32,14 @@ class STLStubDefinition:
     def emit(self) -> str:
         if not self.members:
             return ""
+
         body = f"class {self.class_name} {{\npublic:\n"
+
         for m in self.members:
             body += f"\t{m};\n"
+
         body += "};\n"
+
         return body
 
 
@@ -64,8 +69,8 @@ class ClassGraph:
         inherited_virtuals: set[FunctionSignature] = field(default_factory=set)
         inherited_virtuals_by_name: dict[str, set[FunctionSignature]] = field(default_factory=dict)
 
-        # normalized_type -> [(stripped_leaf_type, is_by_value), ...]
-        type_refs: dict[str, list[tuple[str, bool]]] = field(default_factory=dict)
+        # normalized_type -> [(stripped_leaf_type, is_by_value, is_from_function), ...]
+        type_refs: dict[str, list[tuple[str, bool, bool]]] = field(default_factory=dict)
 
     def __init__(self, classes: dict[str, Class]):
         self._classes = classes
@@ -74,20 +79,20 @@ class ClassGraph:
         self.class_order = []
 
         for name, cls in classes.items():
-            self._info[name] = self._build_class_info(name, cls)
             if "::" in name:
                 self._namespace_prefixes.add("::".join(name.split("::")[:-1]))
+            self._info[name] = self._build_class_info(name, cls)
 
         # inherited_virtuals needs all _ClassInfo to already exist
         # (it recurses across classes), so it can't be folded into
         # the loop above
         for name in classes:
-            self._resolve_inherited_virtuals(name)
+            self._info[name].inherited_virtuals = self.get_inherited_virtuals(name)
 
         self._emit_order()
 
-        if DataManager().get("debug_info") == True:
-            self.diagnose_broken_overrides()
+        if DataManager().get("debug_info"):
+            self._diagnose_broken_overrides()
 
     @staticmethod
     def _build_class_info(
@@ -97,51 +102,63 @@ class ClassGraph:
         """
         Single pass over a class's fields, populating both
         own_virtuals and type_refs at once.
-        Must run `_resolve_inherited_virtuals` after all
-        class info instances are built to populate them.
         """
         info = ClassGraph._ClassInfo(name=name)
+        seen_sigs: set[FunctionSignature] = set()
 
-        def process_type(raw: str):
-            normalized = STLUtils.normalize_type(raw)
+        def process_type(raw: str, from_func: bool = False):
+            normalized = CppUtils.normalize_type(raw)
             if normalized in info.type_refs:
                 return
 
             if "std::" in normalized:
-                info.type_refs[normalized] = STLUtils.stl_value_types(normalized)
+                info.type_refs[normalized] = list(
+                    (type, by_value, from_func)
+                    for type, by_value
+                    in STLUtils.stl_value_types(normalized)
+                )
             else:
-                bare = STLUtils.strip_crp(normalized)
+                bare = CppUtils.strip_crp(normalized)
                 if bare:
                     by_value = "*" not in normalized and "&" not in normalized
-                    info.type_refs[normalized] = [(bare, by_value)]
+                    info.type_refs[normalized] = [(bare, by_value, from_func)]
 
         for f in cls.fields:
             ff = f.getAsFunctionBindField()
             mf = f.getAsMemberField()
 
             if ff is not None:
-                process_type(ff.prototype.ret.name)
+                process_type(ff.prototype.ret.name, from_func=True)
                 for _, arg_t in ff.prototype.args:
-                    process_type(arg_t.name)
+                    process_type(arg_t.name, from_func=True)
+
+                # lowkey don't need *all* of them
+                ff_sig = FunctionSignature.from_field(name, ff)
+
+                if ff_sig in seen_sigs:
+                    print(
+                        f"[!] ClassGraph: Function '{ff_sig.qualified_name}' "
+                        f"was redeclared with identical signature in {cls.source}!"
+                    )
+
+                seen_sigs.add(ff_sig)
 
                 if ff.prototype.is_virtual:
-                    info.own_virtuals.append(
-                        FunctionSignature.from_field(name, ff)
-                    )
+                    info.own_virtuals.append(ff_sig)
             elif mf is not None:
                 process_type(mf.type.name)
 
         return info
 
-    def _resolve_inherited_virtuals(self, name: str) -> set[FunctionSignature]:
-        info = self._info.get(name)
+    def get_inherited_virtuals(self, cls_name: str) -> set[FunctionSignature]:
+        info = self._info.get(cls_name)
         if info is None:
             return set()
 
         if info.inherited_virtuals:
             return info.inherited_virtuals
 
-        cls = self._classes.get(name)
+        cls = self._classes.get(cls_name)
         if cls is None:
             return set()
 
@@ -152,7 +169,8 @@ class ClassGraph:
             base_info = self._info.get(base_name)
             if base_info:
                 sigs |= set(base_info.own_virtuals)
-            sigs |= self._resolve_inherited_virtuals(base_name)
+
+            sigs |= self.get_inherited_virtuals(base_name)
 
         for sig in sigs:
             info.inherited_virtuals_by_name.setdefault(sig.name, set()).add(sig)
@@ -248,9 +266,9 @@ class ClassGraph:
         for class_name, info in self._info.items():
             class_pos = position.get(class_name, -1)
             for entries in info.type_refs.values():
-                for bare, by_value in entries:
+                for bare, by_value, from_func in entries:
                     if (
-                        by_value
+                        (by_value and not from_func)
                         or bare not in self._classes
                         or bare in self._namespace_prefixes
                     ):
@@ -286,13 +304,15 @@ class ClassGraph:
                 if "std::" not in type_str:
                     continue
 
-                for bare, by_value in entries:
-                    if by_value or bare in self._namespace_prefixes:
+                for bare, by_value, from_func in entries:
+                    if (by_value and not from_func) or \
+                            bare in self._namespace_prefixes:
                         continue
+
                     if bare in self._classes:
                         stl_fwd_needed.add(bare)
 
-                stripped = STLUtils.strip_crp(type_str)
+                stripped = CppUtils.strip_crp(type_str)
                 if stripped in seen_members:
                     continue
                 seen_members.add(stripped)
@@ -300,7 +320,11 @@ class ClassGraph:
                 member = STLMember(stripped, f"m_{idx}")
                 idx += 1
 
-                target = value if any(bv for _, bv in entries) else ptr
+                target = (
+                    value
+                    if any((bv and not ffunc) for _, bv, ffunc in entries)
+                    else ptr
+                )
                 target.members.append(member)
 
         return stl_fwd_needed, STLTypeDefinitions(ptr, value)
@@ -321,7 +345,7 @@ class ClassGraph:
     def stl_type_definitions(self) -> "STLTypeDefinitions":
         """
         Retrieve the unexpanded STL types needed to be
-        defined in two stub dummy classes under a 
+        defined in two stub dummy classes under a
         `STLTypeDefinitions` instance:
         - Member/function types used by reference
         - Member/function types used by value
@@ -339,7 +363,7 @@ class ClassGraph:
         """
         Finds own virtuals in `class_name` that share a name with a base
         class's virtual but don't match its full signature, which
-        would most likely be an error than intended.
+        could possibly be an error than genuinely intended.
 
         Returns:
             list of (own_sig, conflicting_base_sigs) pairs.
@@ -359,27 +383,22 @@ class ClassGraph:
 
         return broken
 
-    def diagnose_broken_overrides(self) -> None:
+    def _diagnose_broken_overrides(self) -> None:
         """
         Scans every class for virtuals that look like
         intended overrides (same name as a base virtual) but don't
         signature-match, and prints them.
+        Ran on __init__ when `debug_info` is set to True.
         """
-        found_any = False
-
         for class_name in self._classes:
             for own_sig, conflicts in self.get_broken_overrides(class_name):
-                found_any = True
                 conflict_list = ", ".join(str(c) for c in conflicts)
                 print(
-                    f"[!] ClassGraph: Possible broken override in {class_name}: "
-                    f"{own_sig} does not match base signature(s) [{conflict_list}]"
+                    f"[-] DEBUG ClassGraph: Overriden virtual '{own_sig}' in class '{class_name}' "
+                    f"does not match superclass signature(s): {conflict_list}"
                 )
 
-        if not found_any:
-            print("[+] ClassGraph: No broken overrides detected.")
-
-    def _get_hard_deps(self, class_name: str) -> list[str]:
+    def _get_hard_deps(self, class_name: str) -> list[str] | None:
         """
         Types that must be fully defined before class_name.
         Includes:
@@ -393,39 +412,64 @@ class ClassGraph:
             list[str]
         """
         cls = self._classes.get(class_name)
+        if cls is None:
+            return None
+
         info = self._info.get(class_name)
-        if cls is None or info is None:
-            return []
+        if info is None:
+            return None
 
         deps: list[str] = list(cls.superclasses)
         seen: set[str] = set(deps)
 
         for entries in info.type_refs.values():
-            for bare, by_value in entries:
-                if by_value and bare in self._classes and bare not in seen:
+            for bare, by_value, from_func in entries:
+                if (by_value and not from_func) and \
+                        bare in self._classes and bare not in seen:
                     seen.add(bare)
                     deps.append(bare)
 
         return deps
 
-    def _emit_order(self):
+    def _emit_order(self) -> None:
         """
         Topologically sorts the class names per inheritence
         and member types for correct order of definition.
         """
         visited: set[str] = set()
+        visiting: set[str] = set()
 
-        def visit(name: str):
+        def visit(name: str, predecessor: str = ""):
+            if name in visiting:
+                print(
+                    "[!] ClassGraph: Cyclic dependency detected between "
+                    f"'{predecessor}' and '{name}'!"
+                )
+                return
+
             if name in visited:
                 return
-            visited.add(name)
+
+            visiting.add(name)
 
             # skip bare namespace names entirely
             if name in self._namespace_prefixes:
+                visiting.remove(name)
                 return
 
-            for dep in self._get_hard_deps(name):
-                visit(dep)
+            hard_deps = self._get_hard_deps(name)
+            if hard_deps is None:
+                print(
+                    "[!] ClassGraph: Could not retrieve hard dependencies "
+                    f"list for class '{name}'!"
+                )
+                return
+
+            for dep in hard_deps:
+                visit(dep, name)
+
+            visiting.remove(name)
+            visited.add(name)
             self.class_order.append(name)
 
         for name in self._classes:
