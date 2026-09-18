@@ -6,7 +6,7 @@ from broma_ida.metadata import (
     __version__, __author__, __maintainer__,
     PLUGIN_NAME, PLUGIN_GITHUB
 )
-from broma_ida.utils import HAS_IDACLANG
+from broma_ida.ida_utils import HAS_IDACLANG
 
 from broma_ida.ui.types.dynamic_form import DynamicForm
 from broma_ida.data.data_manager import DataManager

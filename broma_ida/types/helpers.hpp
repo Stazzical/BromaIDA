@@ -1,3 +1,12 @@
+#ifndef PAD
+#define STR_CONCAT_WRAPPER(a, b) a ## b
+#define STR_CONCAT(a, b) STR_CONCAT_WRAPPER(a, b)
+#define PAD(size) unsigned char STR_CONCAT(__pad, __LINE__)[size]
+#endif
+
+// these SeedValue classes were originally under the 'geode::' namespace
+// but we strip that namespace for now until a more permanent solution like an sdk parser comes up
+
 class SeedValueSR
 {
 public:

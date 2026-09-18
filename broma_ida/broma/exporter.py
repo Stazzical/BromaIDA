@@ -13,7 +13,7 @@ from broma_ida.broma.constants import (
 )
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.argtype import ArgType, RetType
-from broma_ida.utils import IDAUtils, HAS_IDACLANG
+from broma_ida.ida_utils import IDAUtils, HAS_IDACLANG
 
 from broma_ida.data.data_manager import DataManager
 
@@ -508,7 +508,7 @@ class BromaExporter:
                 pass
 
         with open(self._filepath, "r", encoding="utf-8-sig") as fr, \
-                open(f"{self._filepath}.tmp", "w") as fw:
+                open(f"{self._filepath}.tmp", "w", encoding="utf-8") as fw:
             current_class_name: str = ""
 
             for line in fr.readlines():

@@ -18,7 +18,8 @@ from broma_ida.metadata import (
     __version__,
     PLUGIN_NAME, PLUGIN_DESCRIPTION, PLUGIN_HOTKEY
 )
-from broma_ida.utils import stop, path_exists, IDAUtils
+from broma_ida.utils import path_exists
+from broma_ida.ida_utils import stop, IDAUtils
 from broma_ida.broma.importer import BromaImporter
 from broma_ida.broma.exporter import BromaExporter
 
