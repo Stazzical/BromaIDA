@@ -12,13 +12,13 @@ namespace stl
 			std::uint8_t sizex2;
 			std::array<T, 23> shortStorage;
 		};
-	
+
 		struct Long {
 			std::size_t capacitym1;
 			std::size_t size;
 			T* longStorage;
 		};
-	
+
 		union {
 			Short m_short;
 			Long m_long;

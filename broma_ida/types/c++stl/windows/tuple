@@ -24,7 +24,7 @@ namespace std
 		constexpr tuple(const tuple&) noexcept /* strengthened */ {} // TRANSITION, ABI: should be defaulted
 
 		constexpr tuple& operator=(const tuple&) = default;
-	
+
 		constexpr void swap(tuple&) noexcept {}
 
 		constexpr bool _Equals(const tuple&) const noexcept {

@@ -14,13 +14,13 @@ namespace std
 		using const_pointer   = const _Ty*;
 		using reference       = _Ty&;
 		using const_reference = const _Ty&;
-	
+
 		// using iterator       = _Array_iterator<_Ty, _Size>;
 		// using const_iterator = _Array_const_iterator<_Ty, _Size>;
-	
+
 		// using reverse_iterator       = _STD reverse_iterator<iterator>;
 		// using const_reverse_iterator = _STD reverse_iterator<const_iterator>;
-	
+
 		_Ty _Elems[_Size];
 	};
 }

@@ -10,7 +10,7 @@ namespace stl
 		std::uintptr_t* m_bitptr;
 		std::uintptr_t m_mask;
 	};
-	
+
 	struct __bit_iterator {
 		std::uintptr_t* m_bitptr;
 		unsigned int m_offset;

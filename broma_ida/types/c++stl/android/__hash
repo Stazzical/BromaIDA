@@ -64,7 +64,7 @@ namespace std
 	_Cxx_hashtable_define_trivial_hash(unsigned long long)
 
 
-	
+
 	template<typename _Tp, typename _Hash>
 	using __cache_default
 	  =  std::__not_<std::conjunction<// Do not cache for fast hasher.
@@ -947,7 +947,7 @@ namespace std
 			using __value_alloc_traits = std::allocator_traits<__value_alloc_type>;
 
 			using __node_base = __detail::_Hash_node_base;
-			using __bucket_type = __node_base*;      
+			using __bucket_type = __node_base*;
 			using __bucket_alloc_type = std::allocator_traits<__node_alloc_type>::template rebind_alloc<__bucket_type>;
 			using __bucket_alloc_traits = std::allocator_traits<__bucket_alloc_type>;
 		};

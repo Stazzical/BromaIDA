@@ -101,6 +101,11 @@ protected: varType varName;                                  \
 public: varType get##funName(void) const { return varName; } \
 public: void set##funName(varType var) { varName = var; }
 
+#define CC_SYNTHESIZE_NV_PASS_BY_REF(varType, varName, funName) \
+public: varType varName;                                        \
+public: const varType& get##funName(void) const { return varName; } \
+public: void set##funName(const varType& var) { varName = var; }
+
 #define CC_SYNTHESIZE_READONLY_NV(varType, varName, funName) \
 protected: varType varName;                                  \
 public: varType get##funName(void) const { return varName; }
@@ -234,7 +239,6 @@ typedef double GLclampd;
 typedef void GLvoid;
 
 
-
 // pugixml
 namespace pugi
 {
@@ -272,7 +276,7 @@ namespace pugi
 
 	private:
 		xml_attribute_struct* _attr;
-	
+
 		typedef void (*unspecified_bool_type)(xml_attribute***);
 	};
 
@@ -369,6 +373,31 @@ typedef struct UT_hash_handle {
 // not here because they are used extensively, and because they're used in stl_types.hpp
 #include "cocos2d_geometry.hpp"
 
+enum ResolutionPolicy
+{
+	// The entire application is visible in the specified area without trying to preserve the original aspect ratio.
+	// Distortion can occur, and the application may appear stretched or compressed.
+	kResolutionExactFit,
+	// The entire application fills the specified area, without distortion but possibly with some cropping,
+	// while maintaining the original aspect ratio of the application.
+	kResolutionNoBorder,
+	// The entire application is visible in the specified area without distortion while maintaining the original
+	// aspect ratio of the application. Borders can appear on two sides of the application.
+	kResolutionShowAll,
+	// The application takes the height of the design resolution size and modifies the width of the internal
+	// canvas so that it fits the aspect ratio of the device
+	// no distortion will occur however you must make sure your application works on different
+	// aspect ratios
+	kResolutionFixedHeight,
+	// The application takes the width of the design resolution size and modifies the height of the internal
+	// canvas so that it fits the aspect ratio of the device
+	// no distortion will occur however you must make sure your application works on different
+	// aspect ratios
+	kResolutionFixedWidth,
+
+	kResolutionUnKnown,
+};
+
 namespace cocos2d
 {
 	// not in cocos2d, blame geode
@@ -463,6 +492,12 @@ namespace cocos2d
 	};
 
 	// enums
+	enum class BorderAlignment {
+		Outside = 0,
+		Center = 1,
+		Inside = 2
+	};
+
 	enum class CCObjectType {
 		PlayLayerObjectType = 5,
 		LevelEditorLayerObjectType = 6,
@@ -523,13 +558,13 @@ namespace cocos2d
 	typedef enum {
 		/// sets a 2D projection (orthogonal projection)
 		kCCDirectorProjection2D,
-		
+
 		/// sets a 3D projection with a fovy=60, znear=0.5f and zfar=1500.
 		kCCDirectorProjection3D,
-		
+
 		/// it calls "updateProjection" on the projection delegate.
 		kCCDirectorProjectionCustom,
-		
+
 		/// Default projection is 3D projection
 		kCCDirectorProjectionDefault = kCCDirectorProjection3D,
 	} ccDirectorProjection;
@@ -781,14 +816,13 @@ namespace cocos2d
 		/** Living particles are attached to the world and are unaffected by emitter repositioning. */
 		kCCPositionTypeFree,
 
-		
 		kCCPositionTypeRelative,
 
 		/** Living particles are attached to the emitter and are translated along with it. */
 		kCCPositionTypeGrouped,
 	} tCCPositionType;
 
-	typedef enum  
+	typedef enum
 	{
 		kCCMenuStateWaiting,
 		kCCMenuStateTrackingTouch
@@ -813,29 +847,6 @@ namespace cocos2d
 		/// Bar
 		kCCProgressTimerTypeBar,
 	} CCProgressTimerType;
-
-	enum
-	{
-		CCControlEventTouchDown           = 1 << 0,    // A touch-down event in the control.
-		CCControlEventTouchDragInside     = 1 << 1,    // An event where a finger is dragged inside the bounds of the control.
-		CCControlEventTouchDragOutside    = 1 << 2,    // An event where a finger is dragged just outside the bounds of the control. 
-		CCControlEventTouchDragEnter      = 1 << 3,    // An event where a finger is dragged into the bounds of the control.
-		CCControlEventTouchDragExit       = 1 << 4,    // An event where a finger is dragged from within a control to outside its bounds.
-		CCControlEventTouchUpInside       = 1 << 5,    // A touch-up event in the control where the finger is inside the bounds of the control. 
-		CCControlEventTouchUpOutside      = 1 << 6,    // A touch-up event in the control where the finger is outside the bounds of the control.
-		CCControlEventTouchCancel         = 1 << 7,    // A system event canceling the current touches for the control.
-		CCControlEventValueChanged        = 1 << 8      // A touch dragging or otherwise manipulating a control, causing it to emit a series of different values.
-	};
-	typedef unsigned int CCControlEvent;
-
-	enum 
-	{
-		CCControlStateNormal       = 1 << 0, // The normal, or default state of a control. that is, enabled but neither selected nor highlighted.
-		CCControlStateHighlighted  = 1 << 1, // Highlighted state of a control. A control enters this state when a touch down, drag inside or drag enter is performed. You can retrieve and set this value through the highlighted property.
-		CCControlStateDisabled     = 1 << 2, // Disabled state of a control. This state indicates that the control is currently disabled. You can retrieve and set this value through the enabled property.
-		CCControlStateSelected     = 1 << 3  // Selected state of a control. This state indicates that the control is currently selected. You can retrieve and set this value through the selected property.
-	};
-	typedef unsigned int CCControlState;
 
 	typedef enum LanguageType
 	{
@@ -870,12 +881,46 @@ namespace cocos2d
 		kTargetWP8
 	};
 
+	// originally unnamed, I gave it a name for it to be usable in IDA -Staz
+	enum TMXLayerAttrib {
+		TMXLayerAttribNone = 1 << 0,
+		TMXLayerAttribBase64 = 1 << 1,
+		TMXLayerAttribGzip = 1 << 2,
+		TMXLayerAttribZlib = 1 << 3,
+	};
+
+	// originally unnamed, I gave it a name for it to be usable in IDA -Staz
+	enum TMXProperty {
+		TMXPropertyNone,
+		TMXPropertyMap,
+		TMXPropertyLayer,
+		TMXPropertyObjectGroup,
+		TMXPropertyObject,
+		TMXPropertyTile
+	};
+
+	typedef enum ccTMXTileFlags_ {
+		kCCTMXTileHorizontalFlag        = 0x80000000,
+		kCCTMXTileVerticalFlag            = 0x40000000,
+		kCCTMXTileDiagonalFlag            = 0x20000000,
+		kCCFlipedAll                    = (kCCTMXTileHorizontalFlag|kCCTMXTileVerticalFlag|kCCTMXTileDiagonalFlag),
+		kCCFlippedMask                    = ~(kCCFlipedAll)
+	} ccTMXTileFlags;
+
+	// originally unnamed, I gave it a name for it to be usable in IDA -Staz
+	enum CCTMXOrientation
+	{
+		CCTMXOrientationOrtho,
+		CCTMXOrientationHex,
+		CCTMXOrientationIso,
+	};
+
 	enum ccTouchType {
 		CCTOUCHBEGAN = 0,
 		CCTOUCHMOVED = 1,
 		CCTOUCHENDED = 2,
 		CCTOUCHCANCELLED = 3,
-		
+
 		ccTouchMax = 4,
 	};
 
@@ -885,31 +930,6 @@ namespace cocos2d
 		kCCScrollViewDirectionVertical,
 		kCCScrollViewDirectionBoth
 	} CCScrollViewDirection;
-
-	enum ResolutionPolicy
-	{
-		// The entire application is visible in the specified area without trying to preserve the original aspect ratio.
-		// Distortion can occur, and the application may appear stretched or compressed.
-		kResolutionExactFit,
-		// The entire application fills the specified area, without distortion but possibly with some cropping,
-		// while maintaining the original aspect ratio of the application.
-		kResolutionNoBorder,
-		// The entire application is visible in the specified area without distortion while maintaining the original
-		// aspect ratio of the application. Borders can appear on two sides of the application.
-		kResolutionShowAll,
-		// The application takes the height of the design resolution size and modifies the width of the internal
-		// canvas so that it fits the aspect ratio of the device
-		// no distortion will occur however you must make sure your application works on different
-		// aspect ratios
-		kResolutionFixedHeight,
-		// The application takes the width of the design resolution size and modifies the height of the internal
-		// canvas so that it fits the aspect ratio of the device
-		// no distortion will occur however you must make sure your application works on different
-		// aspect ratios
-		kResolutionFixedWidth,
-
-		kResolutionUnKnown,
-	};
 
 	typedef enum {
 		// the back key clicked msg
@@ -925,74 +945,14 @@ namespace cocos2d
 	struct _hashSelectorEntry;
 	struct _hashElement;
 
-	typedef struct _ccBlendFunc
-	{
-		//! source blend function
-		GLenum src;
-		//! destination blend function
-		GLenum dst;
-	} ccBlendFunc;
-
-	typedef struct _ccFontShadow
-	{
-	public:
-		
-		// shadow is not enabled by default
-		_ccFontShadow(): m_shadowEnabled(false) {}
-		
-		// true if shadow enabled
-		bool   m_shadowEnabled;
-		// shadow x and y offset
-		cocos2d::CCSize m_shadowOffset;
-		// shadow blurrines
-		float  m_shadowBlur;
-		// shadow opacity
-		float  m_shadowOpacity;
-	} ccFontShadow;
-
-	typedef struct _ccFontStroke
-	{
-	public:
-		
-		// stroke is disabled by default
-		_ccFontStroke(): m_strokeEnabled(false) {}
-		
-		// true if stroke enabled
-		bool        m_strokeEnabled;
-		// stroke color
-		cocos2d::ccColor3B   m_strokeColor;
-		// stroke size
-		float       m_strokeSize;
-	} ccFontStroke;
-
-	typedef struct _ccFontDefinition
-	{
-	public:
-		_ccFontDefinition():
-			m_alignment(cocos2d::kCCTextAlignmentCenter),
-			m_vertAlignment(cocos2d::kCCVerticalTextAlignmentTop),
-			m_fontFillColor(cocos2d::ccWHITE),
-			m_dimensions(CCSizeMake(0, 0))
-		{}
-		
-		// font name
-		std::string             m_fontName;
-		// font size
-		int                     m_fontSize;
-		// horizontal alignment
-		cocos2d::CCTextAlignment         m_alignment;
-		// vertical alignment
-		cocos2d::CCVerticalTextAlignment m_vertAlignment;
-		// renering box
-		cocos2d::CCSize                  m_dimensions;
-		// font color
-		cocos2d::ccColor3B               m_fontFillColor;
-		// font shadow
-		ccFontShadow            m_shadow;
-		// font stroke
-		ccFontStroke            m_stroke;
-		
-	} ccFontDefinition;
+	typedef struct _ccBezierConfig {
+		//! end position of the bezier
+		CCPoint endPosition;
+		//! Bezier control point 1
+		CCPoint controlPoint_1;
+		//! Bezier control point 2
+		CCPoint controlPoint_2;
+	} ccBezierConfig;
 
 	typedef struct _ccTexParams {
 		GLuint minFilter;
@@ -1001,23 +961,13 @@ namespace cocos2d
 		GLuint wrapT;
 	} ccTexParams;
 
-	typedef struct _ccTex2F {
-		GLfloat u;
-		GLfloat v;
-	} ccTex2F;
-
-	typedef struct _ccVertex2F
+	typedef struct _ccHSVValue
 	{
-		GLfloat x;
-		GLfloat y;
-	} ccVertex2F;
-
-	typedef struct _ccVertex3F
-	{
-		GLfloat x;
-		GLfloat y;
-		GLfloat z;
-	} ccVertex3F;
+		float h, s, v;
+		bool absoluteSaturation;
+		bool absoluteBrightness;
+		private: unsigned char __pad[2];
+	} ccHSVValue;
 
 	typedef struct _ccColor4F {
 		GLfloat r;
@@ -1034,13 +984,213 @@ namespace cocos2d
 		GLubyte a;
 	} ccColor4B;
 
-	typedef struct _ccHSVValue
+	typedef struct _ccVertex2F
 	{
-		float h, s, v;
-		bool absoluteSaturation;
-		bool absoluteBrightness;
-		private: unsigned char __pad[2];
-	} ccHSVValue;
+		GLfloat x;
+		GLfloat y;
+	} ccVertex2F;
+
+	typedef struct _ccVertex3F
+	{
+		GLfloat x;
+		GLfloat y;
+		GLfloat z;
+	} ccVertex3F;
+
+	typedef struct _ccTex2F {
+		GLfloat u;
+		GLfloat v;
+	} ccTex2F;
+
+	//! Point Sprite component
+	typedef struct _ccPointSprite
+	{
+		ccVertex2F    pos;        // 8 bytes
+		ccColor4B    color;        // 4 bytes
+		GLfloat        size;        // 4 bytes
+	} ccPointSprite;
+
+	//!    A 2D Quad. 4 * 2 floats
+	typedef struct _ccQuad2 {
+		ccVertex2F        tl;
+		ccVertex2F        tr;
+		ccVertex2F        bl;
+		ccVertex2F        br;
+	} ccQuad2;
+
+	//!    A 3D Quad. 4 * 3 floats
+	typedef struct _ccQuad3 {
+		ccVertex3F        bl;
+		ccVertex3F        br;
+		ccVertex3F        tl;
+		ccVertex3F        tr;
+	} ccQuad3;
+
+	typedef struct _ccV2F_C4B_T2F
+	{
+		//! vertices (2F)
+		ccVertex2F        vertices;
+		//! colors (4B)
+		ccColor4B        colors;
+		//! tex coords (2F)
+		ccTex2F            texCoords;
+	} ccV2F_C4B_T2F;
+
+	typedef struct _ccV2F_C4F_T2F
+	{
+		//! vertices (2F)
+		ccVertex2F        vertices;
+		//! colors (4F)
+		ccColor4F        colors;
+		//! tex coords (2F)
+		ccTex2F            texCoords;
+	} ccV2F_C4F_T2F;
+
+	typedef struct _ccV3F_C4B_T2F
+	{
+		//! vertices (3F)
+		ccVertex3F        vertices;            // 12 bytes
+	//    char __padding__[4];
+
+		//! colors (4B)
+		ccColor4B        colors;                // 4 bytes
+	//    char __padding2__[4];
+
+		// tex coords (2F)
+		ccTex2F            texCoords;            // 8 bytes
+	} ccV3F_C4B_T2F;
+
+	typedef struct _ccV2F_C4B_T2F_Triangle
+	{
+		//! Point A
+		ccV2F_C4B_T2F a;
+		//! Point B
+		ccV2F_C4B_T2F b;
+		//! Point B
+		ccV2F_C4B_T2F c;
+	} ccV2F_C4B_T2F_Triangle;
+
+	typedef struct _ccV2F_C4B_T2F_Quad
+	{
+		//! bottom left
+		ccV2F_C4B_T2F    bl;
+		//! bottom right
+		ccV2F_C4B_T2F    br;
+		//! top left
+		ccV2F_C4B_T2F    tl;
+		//! top right
+		ccV2F_C4B_T2F    tr;
+	} ccV2F_C4B_T2F_Quad;
+
+	typedef struct _ccV3F_C4B_T2F_Quad
+	{
+		//! top left
+		ccV3F_C4B_T2F    tl;
+		//! bottom left
+		ccV3F_C4B_T2F    bl;
+		//! top right
+		ccV3F_C4B_T2F    tr;
+		//! bottom right
+		ccV3F_C4B_T2F    br;
+	} ccV3F_C4B_T2F_Quad;
+
+	typedef struct _ccV2F_C4F_T2F_Quad
+	{
+		//! bottom left
+		ccV2F_C4F_T2F    bl;
+		//! bottom right
+		ccV2F_C4F_T2F    br;
+		//! top left
+		ccV2F_C4F_T2F    tl;
+		//! top right
+		ccV2F_C4F_T2F    tr;
+	} ccV2F_C4F_T2F_Quad;
+
+	typedef struct _ccBlendFunc
+	{
+		//! source blend function
+		GLenum src;
+		//! destination blend function
+		GLenum dst;
+	} ccBlendFunc;
+
+	typedef struct _ccT2F_Quad
+	{
+		//! bottom left
+		ccTex2F    bl;
+		//! bottom right
+		ccTex2F    br;
+		//! top left
+		ccTex2F    tl;
+		//! top right
+		ccTex2F    tr;
+	} ccT2F_Quad;
+
+	// struct that holds the size in pixels, texture coordinates and delays for animated CCParticleSystemQuad
+	typedef struct
+	{
+		ccT2F_Quad texCoords;
+		float delay;
+		CCSize size;
+	} ccAnimationFrameData;
+
+	typedef struct _ccFontShadow
+	{
+	public:
+		// shadow is not enabled by default
+		_ccFontShadow(): m_shadowEnabled(false) {}
+
+		// true if shadow enabled
+		bool   m_shadowEnabled;
+		// shadow x and y offset
+		cocos2d::CCSize m_shadowOffset;
+		// shadow blurrines
+		float  m_shadowBlur;
+		// shadow opacity
+		float  m_shadowOpacity;
+	} ccFontShadow;
+
+	typedef struct _ccFontStroke
+	{
+	public:
+		// stroke is disabled by default
+		_ccFontStroke(): m_strokeEnabled(false) {}
+
+		// true if stroke enabled
+		bool        m_strokeEnabled;
+		// stroke color
+		ccColor3B   m_strokeColor;
+		// stroke size
+		float       m_strokeSize;
+	} ccFontStroke;
+
+	typedef struct _ccFontDefinition
+	{
+	public:
+		_ccFontDefinition():
+			m_alignment(kCCTextAlignmentCenter),
+			m_vertAlignment(kCCVerticalTextAlignmentTop),
+			m_fontFillColor(ccWHITE),
+			m_dimensions(CCSizeMake(0, 0))
+		{}
+
+		// font name
+		std::string             m_fontName;
+		// font size
+		int                     m_fontSize;
+		// horizontal alignment
+		CCTextAlignment         m_alignment;
+		// vertical alignment
+		CCVerticalTextAlignment m_vertAlignment;
+		// renering box
+		CCSize                  m_dimensions;
+		// font color
+		ccColor3B               m_fontFillColor;
+		// font shadow
+		ccFontShadow            m_shadow;
+		// font stroke
+		ccFontStroke            m_stroke;
+	} ccFontDefinition;
 
 	typedef struct sCCParticle {
 		CCPoint     pos;
@@ -1075,49 +1225,6 @@ namespace cocos2d
 		} modeB;
 
 	} tCCParticle;
-
-	typedef struct _ccV2F_C4B_T2F
-	{
-		//! vertices (2F)
-		ccVertex2F        vertices;
-		//! colors (4B)
-		ccColor4B        colors;
-		//! tex coords (2F)
-		ccTex2F            texCoords;
-	} ccV2F_C4B_T2F;
-
-	typedef struct _ccV3F_C4B_T2F
-	{
-		//! vertices (3F)
-		ccVertex3F        vertices;            // 12 bytes
-	//    char __padding__[4];
-
-		//! colors (4B)
-		ccColor4B        colors;                // 4 bytes
-	//    char __padding2__[4];
-
-		// tex coords (2F)
-		ccTex2F            texCoords;            // 8 bytes
-	} ccV3F_C4B_T2F;
-
-	typedef struct _ccV3F_C4B_T2F_Quad
-	{
-		//! top left
-		ccV3F_C4B_T2F    tl;
-		//! bottom left
-		ccV3F_C4B_T2F    bl;
-		//! top right
-		ccV3F_C4B_T2F    tr;
-		//! bottom right
-		ccV3F_C4B_T2F    br;
-	} ccV3F_C4B_T2F_Quad;
-
-	typedef struct
-	{
-		double h; // angle in degrees
-		double s; // percent
-		double v; // percent
-	} HSV;
 
 	struct  cc_timeval
 	{
@@ -1218,6 +1325,8 @@ namespace cocos2d
 		int  m_type;
 	};
 
+	struct Tile;
+
 
 	// CCObject
 	class CCObject;
@@ -1250,13 +1359,20 @@ namespace cocos2d
 	typedef void (CCObject::*SEL_MenuHandler)(CCObject*);
 	typedef void (CCObject::*SEL_EventHandler)(CCEvent*);
 	typedef int (CCObject::*SEL_Compare)(CCObject*);
-	typedef void (CCObject::*SEL_CCControlHandler)(CCObject*, CCControlEvent);
 
 	typedef long long (*CUSTOM_WND_PROC)(unsigned int message, unsigned long long wParam, long long lParam, int* pProcessed);
 
 	typedef void (*GLInfoFunction)(GLuint program, GLenum pname, GLint* params);
 	typedef void (*GLLogFunction) (GLuint program, GLsizei bufsize, GLsizei* length, GLchar* infolog);
 
+	class CCZone
+	{
+	public:
+		CCZone(CCObject *pObject = NULL);
+
+	public:
+		CCObject *m_pCopyObject;
+	};
 
 	class CCCopying
 	{
@@ -1329,21 +1445,21 @@ namespace cocos2d
 		virtual void acceptVisitor(CCDataVisitor &visitor);
 
 		virtual void update(float dt) {CC_UNUSED_PARAM(dt);};
-		
+
 		virtual void encodeWithCoder(DS_Dictionary*);
 
 		static CCObject* createWithCoder(DS_Dictionary*);
-		
+
 		virtual bool canEncode();
 
 		inline CCObjectType getObjType() const {
 			return m_eObjType;
 		}
-	
+
 		virtual int getTag() const;
 
 		virtual void setTag(int nTag);
-		
+
 		inline void setObjType(CCObjectType type) {
 			m_eObjType = type;
 		}
@@ -1446,7 +1562,7 @@ namespace cocos2d
 		inline CCString(const std::string& str) : m_sString(str.c_str()) {}
 		inline CCString(const CCString& str) {}
 		virtual inline ~CCString() {}
-		
+
 		CCString& operator= (const CCString& other);
 
 		bool initWithFormat(const char* format, ...) CC_FORMAT_PRINTF(2, 3);
@@ -1536,7 +1652,7 @@ namespace cocos2d
 		static CCArray* createWithCapacity(unsigned int capacity);
 		static CCArray* createWithArray(CCArray* otherArray);
 		static CCArray* createWithContentsOfFile(const char* pFileName);
-		
+
 		static CCArray* createWithContentsOfFileThreadSafe(const char* pFileName);
 
 		bool init();
@@ -1583,7 +1699,7 @@ namespace cocos2d
 
 		void reverseObjects();
 		void reduceMemoryFootprint();
-	
+
 		virtual CCObject* copyWithZone(CCZone* pZone);
 
 		virtual void acceptVisitor(CCDataVisitor &visitor);
@@ -1646,7 +1762,7 @@ namespace cocos2d
 
 		CCObject* objectForKey(const std::string& key);
 		CCObject* objectForKey(std::intptr_t key);
-		
+
 		const CCString* valueForKey(const std::string& key);
 
 		const CCString* valueForKey(std::intptr_t key);
@@ -1810,7 +1926,7 @@ namespace cocos2d
 
 #if 0  /* windows phone my beloved */
 	#if (CC_TARGET_PLATFORM == CC_PLATFORM_WINRT) || (CC_TARGET_PLATFORM == CC_PLATFORM_WP8)
-		gd::string       m_shaderId;
+		std::string       m_shaderId;
 	#endif
 #endif
 	};
@@ -1848,7 +1964,7 @@ namespace cocos2d
 		CC_SYNTHESIZE_READONLY_NV(unsigned short,   m_nHeight,      Height);
 		CC_SYNTHESIZE_READONLY_NV(int, m_nBitsPerComponent,   BitsPerComponent);
 
-	protected:
+	public:
 		unsigned char *m_pData;
 		bool m_bHasAlpha;
 		bool m_bPreMulti;
@@ -1860,12 +1976,31 @@ namespace cocos2d
 #endif
 	};
 
+	extern cocos2d::CCImage::ETextAlign __bromaida_force_ETextAlign; // fuckj you idaclang
+
 	class CCSAXDelegator
 	{
 	public:
 		virtual void startElement(void *ctx, const char *name, const char **atts) = 0;
 		virtual void endElement(void *ctx, const char *name) = 0;
 		virtual void textHandler(void *ctx, const char *s, int len) = 0;
+	};
+
+	class CCSAXParser
+	{
+		CCSAXDelegator*    m_pDelegator;
+	public:
+		CCSAXParser();
+		~CCSAXParser(void);
+
+		bool init(const char *pszEncoding);
+		bool parse(const char* pXMLData, unsigned int uDataLength);
+		bool parse(const char *pszFile);
+		void setDelegator(CCSAXDelegator* pDelegator);
+
+		static void startElement(void *ctx, const CC_XML_CHAR *name, const CC_XML_CHAR **atts);
+		static void endElement(void *ctx, const CC_XML_CHAR *name);
+		static void textHandler(void *ctx, const CC_XML_CHAR *name, int len);
 	};
 
 	class CCTexture2D : public CCObject
@@ -1879,7 +2014,7 @@ namespace cocos2d
 
 		void releaseData(void *data);
 
-		
+
 		void* keepData(void *data, unsigned int length);
 
 		bool initWithData(const void* data, CCTexture2DPixelFormat pixelFormat, unsigned int pixelsWide, unsigned int pixelsHigh, const CCSize& contentSize);
@@ -1901,12 +2036,12 @@ namespace cocos2d
 		void generateMipmap();
 
 		const char* stringForFormat();
-		
+
 		unsigned int bitsPerPixelForFormat();
-		
+
 		unsigned int bitsPerPixelForFormat(CCTexture2DPixelFormat format);
 		static void setDefaultAlphaPixelFormat(CCTexture2DPixelFormat format);
-		
+
 		static CCTexture2DPixelFormat defaultAlphaPixelFormat();
 		static void PVRImagesHavePremultipliedAlpha(bool haveAlphaPremultiplied);
 
@@ -2076,13 +2211,13 @@ namespace cocos2d
 		virtual bool isEnabled() const;
 		virtual void setEnabled(bool b);
 		static CCComponent* create(void);
-		
+
 		const char* getName() const;
 		void setName(const char *pName);
-		
+
 		void setOwner(CCNode *pOwner);
 		CCNode* getOwner() const;
-		
+
 	protected:
 		CCNode *m_pOwner;
 		std::string m_strName;
@@ -2093,7 +2228,7 @@ namespace cocos2d
 	{
 	protected:
 		CCComponentContainer(CCNode *pNode);
-		
+
 	public:
 		virtual ~CCComponentContainer(void);
 		virtual CCComponent* get(const char *pName) const;
@@ -2104,18 +2239,18 @@ namespace cocos2d
 		virtual void visit(float fDelta);
 	public:
 		bool isEmpty() const;
-		
+
 	private:
 		void alloc(void);
 
 	private:
 		CCDictionary *m_pComponents;        ///< Dictionary of components
 		CCNode *m_pOwner;
-		
+
 		friend class CCNode;
 	};
 
-	class CCAction : public CCObject 
+	class CCAction : public CCObject
 	{
 	public:
 		CCAction(void);
@@ -2132,11 +2267,11 @@ namespace cocos2d
 		virtual void step(float dt);
 
 		virtual void update(float time);
-		
+
 		inline CCNode* getTarget(void) { return m_pTarget; }
 		inline void setTarget(CCNode *pTarget) { m_pTarget = pTarget; }
-		
-		inline CCNode* getOriginalTarget(void) { return m_pOriginalTarget; } 
+
+		inline CCNode* getOriginalTarget(void) { return m_pOriginalTarget; }
 		inline void setOriginalTarget(CCNode *pOriginalTarget) { m_pOriginalTarget = pOriginalTarget; }
 
 		inline int getTag(void) { return m_nTag; }
@@ -2568,7 +2703,7 @@ namespace cocos2d
 	};
 
 	// @note RobTop Addition
-	class CCMouseDelegate 
+	class CCMouseDelegate
 	{
 	public:
 		virtual void rightKeyDown() {}
@@ -2630,7 +2765,7 @@ namespace cocos2d
 
 		virtual bool isTouchEnabled();
 		virtual void setTouchEnabled(bool value);
-		
+
 		virtual void setTouchMode(ccTouchesMode mode);
 		virtual int getTouchMode();
 
@@ -2659,14 +2794,14 @@ namespace cocos2d
 
 		virtual void keyBackClicked(void);
 		virtual void keyMenuClicked(void);
-		
+
 		// @note RobTop Addition
 		void keyDown(enumKeyCodes, double);
 
 		// 2.2 additions
 		virtual void setPreviousPriority(int);
 		virtual int getPreviousPriority();
-		
+
 		inline CCTouchScriptHandlerEntry* getScriptTouchHandlerEntry() { return m_pScriptTouchHandlerEntry; };
 		inline CCScriptHandlerEntry* getScriptKeypadHandlerEntry() { return m_pScriptKeypadHandlerEntry; };
 		inline CCScriptHandlerEntry* getScriptAccelerateHandlerEntry() { return m_pScriptAccelerateHandlerEntry; };
@@ -2784,14 +2919,14 @@ namespace cocos2d
 		virtual void updateDisplayedOpacity(GLubyte parentOpacity);
 		virtual bool isCascadeOpacityEnabled();
 		virtual void setCascadeOpacityEnabled(bool cascadeOpacityEnabled);
-		
+
 		virtual const ccColor3B& getColor();
 		virtual const ccColor3B& getDisplayedColor();
 		virtual void setColor(const ccColor3B& color);
 		virtual void updateDisplayedColor(const ccColor3B& parentColor);
 		virtual bool isCascadeColorEnabled();
 		virtual void setCascadeColorEnabled(bool cascadeColorEnabled);
-		
+
 		virtual void setOpacityModifyRGB(bool bValue) {CC_UNUSED_PARAM(bValue);}
 		virtual bool isOpacityModifyRGB() { return false; }
 
@@ -2852,7 +2987,7 @@ namespace cocos2d
 		virtual bool init();
 
 		// @note RobTop Addition
-		virtual void visit();	
+		virtual void visit();
 
 		virtual void updateColor();
 
@@ -2895,8 +3030,8 @@ namespace cocos2d
 	public:
 		CCMenuItem()
 			: m_bSelected(false)
-			, m_bEnabled(false)            
-			, m_pListener(NULL)            
+			, m_bEnabled(false)
+			, m_pListener(NULL)
 			, m_pfnSelector(NULL)
 			, m_nScriptTapHandler(0)
 			, m_fSizeMult(0.f)
@@ -2917,7 +3052,7 @@ namespace cocos2d
 
 		virtual bool isEnabled();
 		virtual void setEnabled(bool value);
-		virtual bool isSelected();      
+		virtual bool isSelected();
 
 		void setTarget(CCObject *rec, SEL_MenuHandler selector);
 
@@ -2980,7 +3115,7 @@ namespace cocos2d
 
 		virtual void setOpacityModifyRGB(bool bValue) {CC_UNUSED_PARAM(bValue);}
 		virtual bool isOpacityModifyRGB(void) { return false;}
-		
+
 		virtual bool isEnabled() { return m_bEnabled; }
 		virtual void setEnabled(bool value) { m_bEnabled = value; };
 
@@ -3091,12 +3226,12 @@ namespace cocos2d
 	public:
 		CCMenuItemImage(){}
 		virtual ~CCMenuItemImage(){}
-		
+
 		static CCMenuItemImage* create(const char *normalImage, const char *selectedImage);
 		static CCMenuItemImage* create(const char *normalImage, const char *selectedImage, const char *disabledImage);
 		static CCMenuItemImage* create(const char *normalImage, const char *selectedImage, CCObject* target, SEL_MenuHandler selector);
 		static CCMenuItemImage* create(const char *normalImage, const char *selectedImage, const char *disabledImage, CCObject* target, SEL_MenuHandler selector);
-		
+
 		bool init();
 		bool initWithNormalImage(const char *normalImage, const char *selectedImage, const char *disabledImage, CCObject* target, SEL_MenuHandler selector);
 		void setNormalSpriteFrame(CCSpriteFrame* frame);
@@ -3111,7 +3246,7 @@ namespace cocos2d
 	class CCScene;
 	class CCSceneDelegate
 	{
-	public: 
+	public:
 		virtual void willSwitchToScene(CCScene* scene) {}
 	};
 
@@ -3148,7 +3283,7 @@ namespace cocos2d
 		virtual void setTexture(CCTexture2D *texture) = 0;
 	};
 
-	class CCTextureAtlas : public CCObject 
+	class CCTextureAtlas : public CCObject
 	{
 	public:
 		GLushort*           m_pIndices;
@@ -3233,8 +3368,8 @@ namespace cocos2d
 		~CCSpriteBatchNode();
 
 		inline CCTextureAtlas* getTextureAtlas(void) { return m_pobTextureAtlas; }
-		inline void setTextureAtlas(CCTextureAtlas* textureAtlas) 
-		{ 
+		inline void setTextureAtlas(CCTextureAtlas* textureAtlas)
+		{
 			if (textureAtlas != m_pobTextureAtlas)
 			{
 				CC_SAFE_RETAIN(textureAtlas);
@@ -3281,7 +3416,7 @@ namespace cocos2d
 		virtual void addChild(CCNode* child, int zOrder);
 		virtual void addChild(CCNode* child, int zOrder, int tag);
 		virtual void reorderChild(CCNode* child, int zOrder);
-			
+
 		virtual void removeChild(CCNode* child, bool cleanup);
 		virtual void removeAllChildrenWithCleanup(bool cleanup);
 		virtual void sortAllChildren();
@@ -3631,7 +3766,7 @@ namespace cocos2d
 		virtual const ccColor3B& getColor() const;
 		virtual GLubyte getOpacity() const;
 		virtual void setOpacity(GLubyte opacity);
-		
+
 		inline bool isReverseDirection() { return m_bReverseDirection; };
 		inline void setReverseDirection(bool value) { m_bReverseDirection = value; };
 
@@ -3700,7 +3835,6 @@ namespace cocos2d
 		CC_SYNTHESIZE(unsigned int, m_uLoops, Loops)
 	};
 
-	// CCActionInterval
 	class CCFiniteTimeAction : public CCAction
 	{
 	public:
@@ -3717,6 +3851,7 @@ namespace cocos2d
 		float m_fDuration;
 	};
 
+	// CCActionInterval
 	class CCActionInterval : public CCFiniteTimeAction
 	{
 	public:
@@ -3753,7 +3888,7 @@ namespace cocos2d
 	public:
 		virtual CCActionInterval * easeActionWithAction(CCActionInterval * action) = 0;
 	};
-	
+
 
 	// CCActionTween
 	class CCActionTweenDelegate
@@ -3796,7 +3931,7 @@ namespace cocos2d
 		/** initializes the action with an Animation and will restore the original frame when the animation is over */
 		bool initWithAnimation(CCAnimation *pAnimation);
 
-		
+
 		virtual CCObject* copyWithZone(CCZone* pZone);
 		virtual void startWithTarget(CCNode *pTarget);
 		virtual void stop(void);
@@ -3850,7 +3985,7 @@ namespace cocos2d
 
 
 	// CCRenderTexture
-	class CCRenderTexture : public CCNode 
+	class CCRenderTexture : public CCNode
 	{
 		CC_PROPERTY(CCSprite*, m_pSprite, Sprite)
 	public:
@@ -3896,19 +4031,19 @@ namespace cocos2d
 		void listenToBackground(CCObject *obj);
 
 		void listenToForeground(CCObject *obj);
-		
+
 		unsigned int getClearFlags() const;
 		void setClearFlags(unsigned int uClearFlags);
-		
+
 		const ccColor4F& getClearColor() const;
 		void setClearColor(const ccColor4F &clearColor);
-		
+
 		float getClearDepth() const;
 		void setClearDepth(float fClearDepth);
-		
+
 		int getClearStencil() const;
 		void setClearStencil(float fClearStencil);
-		
+
 		bool isAutoDraw() const;
 		void setAutoDraw(bool bAutoDraw);
 
@@ -3983,14 +4118,14 @@ namespace cocos2d
 
 		bool drawSegment(const CCPoint &from, const CCPoint &to, float radius, const ccColor4F &color);
 
-		bool drawPolygon(CCPoint *verts, unsigned int count, const ccColor4F &fillColor, float borderWidth, const ccColor4F &borderColor);
+		bool drawPolygon(CCPoint *verts, unsigned int count, const ccColor4F &fillColor, float borderWidth, const ccColor4F &borderColor, cocos2d::BorderAlignment alignment = BorderAlignment::Outside);
 
 		bool drawCircle(cocos2d::CCPoint const&, float, cocos2d::_ccColor4F const&, float, cocos2d::_ccColor4F const&, unsigned int);
 		void drawCubicBezier(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, unsigned int, cocos2d::_ccColor4F const&, float);
 		void drawPreciseCubicBezier(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::CCPoint const&, unsigned int, cocos2d::_ccColor4F const&, float);
 		bool drawLines(cocos2d::CCPoint*, unsigned int, float, cocos2d::_ccColor4F const&);
-		bool drawRect(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::_ccColor4F const&, float, cocos2d::_ccColor4F const&);
-		bool drawRect(cocos2d::CCRect const&, cocos2d::_ccColor4F const&, float, cocos2d::_ccColor4F const&);
+		bool drawRect(cocos2d::CCPoint const&, cocos2d::CCPoint const&, cocos2d::_ccColor4F const&, float, cocos2d::_ccColor4F const&, cocos2d::BorderAlignment alignment = BorderAlignment::Outside);
+		bool drawRect(cocos2d::CCRect const&, cocos2d::_ccColor4F const&, float, cocos2d::_ccColor4F const&, cocos2d::BorderAlignment alignment = BorderAlignment::Outside);
 		void disableDrawArea();
 		void enableDrawArea(cocos2d::CCRect& rect);
 
@@ -4199,7 +4334,7 @@ namespace cocos2d
 		virtual bool isActive();
 		virtual bool isBlendAdditive();
 		virtual void setBlendAdditive(bool value);
-		
+
 		// @note RobTop Addition
 		CC_SYNTHESIZE_NV(float, m_fFadeInTime, FadeInTime);
 		// @note RobTop Addition
@@ -5035,15 +5170,13 @@ namespace cocos2d
 		float  m_fScaleY;
 		ResolutionPolicy m_eResolutionPolicy;
 
-
 		// RobTop addition, seemingly unused and set to 1.0 in ctor
 		float  m_unkFloat;
 	};
 
 	#ifdef BROMAIDA_IS_PLATFORM_WINDOWS
-	class CCEGLView : public CCEGLViewProtocol 
-		// @note RobTop Addition
-		, public CCObject
+	// @note RobTop Addition: added CCObject inheritance
+	class CCEGLView : public CCEGLViewProtocol, public CCObject
 	{
 	protected:
 		virtual ~CCEGLView();
@@ -5106,20 +5239,20 @@ namespace cocos2d
 
 		static CCEGLView* sharedOpenGLView();
 
+    	// @note RobTop Addition
 		static CCEGLView* create(const std::string&);
 
 		static cocos2d::CCEGLView* createWithFullScreen(std::string const&, bool);
 		static cocos2d::CCEGLView* createWithFullScreen(std::string const&, bool, GLFWvidmode const&, GLFWmonitor*);
 		static cocos2d::CCEGLView* createWithRect(std::string const&, cocos2d::CCRect, float);
 
-		/**
-		* @note RobTop addition
-		*/
+    	// @note RobTop Addition
+    	void toggleFullScreen(bool fullscreen, bool borderless, bool fix);
+
+    	// @note RobTop Addition
 		GLFWwindow* getWindow(void) const;
 
-		/**
-		* @note RobTop addition
-		*/
+    	// @note RobTop Addition
 		CCSize getDisplaySize();
 
 		void capture();
@@ -5233,6 +5366,8 @@ namespace cocos2d
 		void onGLFWWindowPosCallback(GLFWwindow* window, int x, int y);
 		// @note RobTop Addition
 		void onGLFWWindowSizeFunCallback(GLFWwindow* window, int width, int height);
+		// @note RobTop Addition
+		void onGLFWWindowFocus(GLFWwindow* window, int focused);
 	};
 	#elif defined(BROMAIDA_IS_PLATFORM_MACHO)
 	#ifdef BROMAIDA_IS_PLATFORM_IOS
@@ -5272,15 +5407,17 @@ namespace cocos2d
 		virtual void setIMEKeyboardState(bool bOpen);
 		virtual void setMultiTouchMask(bool mask);
 
+		void showCursor(bool state);
+
 	private:
 		static CCEGLView* s_sharedView;
 
 		// @note RobTop Addition
-		bool m_idk1;
+		bool m_bShouldHideCursor;
 		// @note RobTop Addition
-		bool m_idk2;
+		bool m_bCursorOnscreen;
 		// @note RobTop Addition
-		bool m_idk3;
+		bool m_bCursorHidden;
 
 		CCEGLView(void);
 	};
@@ -5321,7 +5458,7 @@ namespace cocos2d
 		void addDelegate(CCKeypadDelegate* pDelegate);
 		void removeDelegate(CCKeypadDelegate* pDelegate);
 
-		void forceAddDelegate(CCKeypadDelegate* pDelegate); 
+		void forceAddDelegate(CCKeypadDelegate* pDelegate);
 		void forceRemoveDelegate(CCKeypadDelegate* pDelegate);
 
 		bool dispatchKeypadMSG(ccKeypadMSGType nMsgType);
@@ -5395,7 +5532,7 @@ namespace cocos2d
 	};
 
 	// @note RobTop Addition
-	class CCMouseDispatcher : public CCObject 
+	class CCMouseDispatcher : public CCObject
 	{
 	public:
 		CCMouseDispatcher();
@@ -5433,7 +5570,6 @@ namespace cocos2d
 		CCAccelerometerDelegate* m_pAccelDelegate;
 	};
 
-	class CCTextureAtlas;
 	class CCAtlasNode : public CCNodeRGBA, public CCTextureProtocol
 	{
 	public:
@@ -5497,8 +5633,8 @@ namespace cocos2d
 			: m_sString("")
 		{}
 		virtual ~CCLabelAtlas()
-		{ 
-			m_sString = ""; 
+		{
+			m_sString = "";
 		}
 
 		static CCLabelAtlas * create(const char *string, const char *charMapFile, unsigned int itemWidth, unsigned int itemHeight, unsigned int startCharMap);
@@ -5524,6 +5660,290 @@ namespace cocos2d
 		std::string m_sString;
 		// the first char in the charmap
 		unsigned int m_uMapStartChar;
+	};
+
+	// these ParallaxNode and TMX stuff are underused
+	// so if either RobTop or a modder starts to care about them, they might go outdated
+	class CCParallaxNode : public CCNode
+	{
+		CC_SYNTHESIZE_NV(struct _ccArray *, m_pParallaxArray, ParallaxArray)
+
+	public:
+		CCParallaxNode();
+		virtual ~CCParallaxNode();
+
+		static CCParallaxNode * create();
+		virtual void addChild(CCNode * child, unsigned int z, const CCPoint& parallaxRatio, const CCPoint& positionOffset);
+		// super methods
+		virtual void addChild(CCNode * child, unsigned int zOrder, int tag);
+		virtual void removeChild(CCNode* child, bool cleanup);
+		virtual void removeAllChildrenWithCleanup(bool cleanup);
+		virtual void visit(void);
+	private:
+		CCPoint absolutePosition();
+	public:
+		CCPoint    m_tLastPosition;
+	};
+
+	class CCTMXObjectGroup : public CCObject
+	{
+		/** offset position of child objects */
+		CC_SYNTHESIZE_NV_PASS_BY_REF(CCPoint, m_tPositionOffset, PositionOffset);
+		/** list of properties stored in a dictionary */
+		CC_PROPERTY(CCDictionary*, m_pProperties, Properties);
+		/** array of the objects */
+		CC_PROPERTY(CCArray*, m_pObjects, Objects);
+	public:
+		CCTMXObjectGroup();
+		virtual ~CCTMXObjectGroup();
+
+		inline const char* getGroupName(){ return m_sGroupName.c_str(); }
+		inline void setGroupName(const char *groupName){ m_sGroupName = groupName; }
+
+		CCString *propertyNamed(const char* propertyName);
+
+		CCDictionary* objectNamed(const char *objectName);
+	public:
+		/** name of the group */
+		std::string m_sGroupName;
+	};
+
+	class CCTMXLayerInfo : public CCObject
+	{
+		CC_PROPERTY(CCDictionary*, m_pProperties, Properties);
+	public:
+		std::string         m_sName;
+		CCSize              m_tLayerSize;
+		unsigned int        *m_pTiles;
+		bool                m_bVisible;
+		unsigned char       m_cOpacity;
+		bool                m_bOwnTiles;
+		unsigned int        m_uMinGID;
+		unsigned int        m_uMaxGID;
+		CCPoint             m_tOffset;
+	public:
+		CCTMXLayerInfo();
+		virtual ~CCTMXLayerInfo();
+	};
+
+	class CCTMXTilesetInfo : public CCObject
+	{
+	public:
+		std::string     m_sName;
+		unsigned int    m_uFirstGid;
+		CCSize          m_tTileSize;
+		unsigned int    m_uSpacing;
+		unsigned int    m_uMargin;
+		//! filename containing the tiles (should be spritesheet / texture atlas)
+		std::string     m_sSourceImage;
+		//! size in pixels of the image
+		CCSize          m_tImageSize;
+	public:
+		CCTMXTilesetInfo();
+		virtual ~CCTMXTilesetInfo();
+		CCRect rectForGID(unsigned int gid);
+	};
+
+	class CCTMXMapInfo : public CCObject, public CCSAXDelegator
+	{
+	public:
+		/// map orientation
+		CC_SYNTHESIZE_NV(int,    m_nOrientation, Orientation);
+		/// map width & height
+		CC_SYNTHESIZE_NV_PASS_BY_REF(CCSize, m_tMapSize, MapSize);
+		/// tiles width & height
+		CC_SYNTHESIZE_NV_PASS_BY_REF(CCSize, m_tTileSize, TileSize);
+		/// Layers
+		CC_PROPERTY(CCArray*, m_pLayers, Layers);
+		/// tilesets
+		CC_PROPERTY(CCArray*, m_pTilesets, Tilesets);
+		/// ObjectGroups
+		CC_PROPERTY(CCArray*, m_pObjectGroups, ObjectGroups);
+		/// parent element
+		CC_SYNTHESIZE_NV(int, m_nParentElement, ParentElement);
+		/// parent GID
+		CC_SYNTHESIZE_NV(unsigned int, m_uParentGID, ParentGID);
+		/// layer attribs
+		CC_SYNTHESIZE_NV(int, m_nLayerAttribs, LayerAttribs);
+		/// is storing characters?
+		CC_SYNTHESIZE_NV(bool, m_bStoringCharacters, StoringCharacters);
+		/// properties
+		CC_PROPERTY(CCDictionary*, m_pProperties, Properties);
+	public:
+		CCTMXMapInfo();
+		virtual ~CCTMXMapInfo();
+		/** creates a TMX Format with a tmx file */
+		static CCTMXMapInfo * formatWithTMXFile(const char *tmxFile);
+		/** creates a TMX Format with an XML string and a TMX resource path */
+		static CCTMXMapInfo * formatWithXML(const char* tmxString, const char* resourcePath);
+		/** initializes a TMX format with a  tmx file
+		* @lua NA
+		*/
+		bool initWithTMXFile(const char *tmxFile);
+		/** initializes a TMX format with an XML string and a TMX resource path
+		* @lua NA
+		*/
+		bool initWithXML(const char* tmxString, const char* resourcePath);
+		/** initializes parsing of an XML file, either a tmx (Map) file or tsx (Tileset) file */
+		bool parseXMLFile(const char *xmlFilename);
+		/* initializes parsing of an XML string, either a tmx (Map) string or tsx (Tileset) string */
+		bool parseXMLString(const char *xmlString);
+
+		CCDictionary* getTileProperties();
+		void setTileProperties(CCDictionary* tileProperties);
+
+		/** implement pure virtual methods of CCSAXDelegator
+		*  @js NA
+		*/
+		void startElement(void *ctx, const char *name, const char **atts);
+		void endElement(void *ctx, const char *name);
+		void textHandler(void *ctx, const char *ch, int len);
+
+		inline const char* getCurrentString(){ return m_sCurrentString.c_str(); }
+		inline void setCurrentString(const char *currentString){ m_sCurrentString = currentString; }
+		inline const char* getTMXFileName(){ return m_sTMXFileName.c_str(); }
+		inline void setTMXFileName(const char *fileName){ m_sTMXFileName = fileName; }
+	private:
+		void internalInit(const char* tmxFileName, const char* resourcePath);
+	public:
+		//! tmx filename
+		std::string m_sTMXFileName;
+		// tmx resource path
+		std::string m_sResources;
+		//! current string
+		std::string m_sCurrentString;
+		//! tile properties
+		CCDictionary* m_pTileProperties;
+		unsigned int m_uCurrentFirstGID;
+	};
+
+	class CCTMXLayer : public CCSpriteBatchNode
+	{
+		/** size of the layer in tiles */
+		CC_SYNTHESIZE_NV_PASS_BY_REF(CCSize, m_tLayerSize, LayerSize);
+		/** size of the map's tile (could be different from the tile's size) */
+		CC_SYNTHESIZE_NV_PASS_BY_REF(CCSize, m_tMapTileSize, MapTileSize);
+		/** pointer to the map of tiles */
+		CC_SYNTHESIZE_NV(unsigned int*, m_pTiles, Tiles);
+		/** Tileset information for the layer */
+		CC_PROPERTY(CCTMXTilesetInfo*, m_pTileSet, TileSet);
+		/** Layer orientation, which is the same as the map orientation */
+		CC_SYNTHESIZE_NV(unsigned int, m_uLayerOrientation, LayerOrientation);
+		/** properties from the layer. They can be added using Tiled */
+		CC_PROPERTY(CCDictionary*, m_pProperties, Properties);
+	public:
+		CCTMXLayer();
+		virtual ~CCTMXLayer();
+
+		static CCTMXLayer * create(CCTMXTilesetInfo *tilesetInfo, CCTMXLayerInfo *layerInfo, CCTMXMapInfo *mapInfo);
+
+		bool initWithTilesetInfo(CCTMXTilesetInfo *tilesetInfo, CCTMXLayerInfo *layerInfo, CCTMXMapInfo *mapInfo);
+
+		void releaseMap();
+
+		CCSprite* tileAt(const CCPoint& tileCoordinate);
+
+		unsigned int  tileGIDAt(const CCPoint& tileCoordinate);
+
+		unsigned int tileGIDAt(const CCPoint& tileCoordinate, ccTMXTileFlags* flags);
+
+		void setTileGID(unsigned int gid, const CCPoint& tileCoordinate);
+
+		void setTileGID(unsigned int gid, const CCPoint& tileCoordinate, ccTMXTileFlags flags);
+
+		void removeTileAt(const CCPoint& tileCoordinate);
+
+		CCPoint positionAt(const CCPoint& tileCoordinate);
+
+		CCString *propertyNamed(const char *propertyName);
+
+		void setupTiles();
+
+		virtual void addChild(CCNode * child, int zOrder, int tag);
+		void removeChild(CCNode* child, bool cleanup);
+
+		inline const char* getLayerName(){ return m_sLayerName.c_str(); }
+		inline void setLayerName(const char *layerName){ m_sLayerName = layerName; }
+	private:
+		CCPoint positionForIsoAt(const CCPoint& pos);
+		CCPoint positionForOrthoAt(const CCPoint& pos);
+		CCPoint positionForHexAt(const CCPoint& pos);
+
+		CCPoint calculateLayerOffset(const CCPoint& offset);
+
+		/* optimization methods */
+		CCSprite* appendTileForGID(unsigned int gid, const CCPoint& pos);
+		CCSprite* insertTileForGID(unsigned int gid, const CCPoint& pos);
+		CCSprite* updateTileForGID(unsigned int gid, const CCPoint& pos);
+
+		/* The layer recognizes some special properties, like cc_vertez */
+		void parseInternalProperties();
+		void setupTileSprite(CCSprite* sprite, CCPoint pos, unsigned int gid);
+		CCSprite* reusedTileWithRect(CCRect rect);
+		int vertexZForPos(const CCPoint& pos);
+
+		// index
+		unsigned int atlasIndexForExistantZ(unsigned int z);
+		unsigned int atlasIndexForNewZ(int z);
+	public:
+		//! name of the layer
+		std::string m_sLayerName;
+		//! TMX Layer supports opacity
+		unsigned char        m_cOpacity;
+
+		unsigned int        m_uMinGID;
+		unsigned int        m_uMaxGID;
+
+		//! Only used when vertexZ is used
+		int                    m_nVertexZvalue;
+		bool                m_bUseAutomaticVertexZ;
+
+		//! used for optimization
+		CCSprite            *m_pReusedTile;
+		ccCArray            *m_pAtlasIndexArray;
+
+		// used for retina display
+		float               m_fContentScaleFactor;
+	};
+
+	class CCTMXTiledMap : public CCNode
+	{
+		/** the map's size property measured in tiles */
+		CC_SYNTHESIZE_NV_PASS_BY_REF(CCSize, m_tMapSize, MapSize);
+		/** the tiles's size property measured in pixels */
+		CC_SYNTHESIZE_NV_PASS_BY_REF(CCSize, m_tTileSize, TileSize);
+		/** map orientation */
+		CC_SYNTHESIZE_NV(int, m_nMapOrientation, MapOrientation);
+		/** object groups */
+		CC_PROPERTY(CCArray*, m_pObjectGroups, ObjectGroups);
+		/** properties */
+		CC_PROPERTY(CCDictionary*, m_pProperties, Properties);
+	public:
+		CCTMXTiledMap();
+		virtual ~CCTMXTiledMap();
+
+		static CCTMXTiledMap* create(const char *tmxFile);
+
+		static CCTMXTiledMap* createWithXML(const char* tmxString, const char* resourcePath);
+
+		bool initWithTMXFile(const char *tmxFile);
+
+		bool initWithXML(const char* tmxString, const char* resourcePath);
+
+		CCTMXLayer* layerNamed(const char *layerName);
+
+		CCTMXObjectGroup* objectGroupNamed(const char *groupName);
+
+		CCString *propertyNamed(const char *propertyName);
+
+		CCDictionary* propertiesForGID(int GID);
+	private:
+		CCTMXLayer * parseLayer(CCTMXLayerInfo *layerInfo, CCTMXMapInfo *mapInfo);
+		CCTMXTilesetInfo * tilesetForLayer(CCTMXLayerInfo *layerInfo, CCTMXMapInfo *mapInfo);
+		void buildWithMapInfo(CCTMXMapInfo* mapInfo);
+	public:
+		//! tile properties
+		CCDictionary* m_pTileProperties;
 	};
 
 	class CCTileMapAtlas : public CCAtlasNode
@@ -6350,6 +6770,79 @@ namespace cocos2d
 	// extension
 	namespace extension
 	{
+		enum KeyboardReturnType {
+			kKeyboardReturnTypeDefault = 0,
+			kKeyboardReturnTypeDone,
+			kKeyboardReturnTypeSend,
+			kKeyboardReturnTypeSearch,
+			kKeyboardReturnTypeGo
+		};
+
+		enum EditBoxInputMode
+		{
+			kEditBoxInputModeAny = 0,
+			kEditBoxInputModeEmailAddr,
+			kEditBoxInputModeNumeric,
+			kEditBoxInputModePhoneNumber,
+			kEditBoxInputModeUrl,
+			kEditBoxInputModeDecimal,
+			kEditBoxInputModeSingleLine
+		};
+
+		enum EditBoxInputFlag
+		{
+			kEditBoxInputFlagPassword = 0,
+			kEditBoxInputFlagSensitive,
+			kEditBoxInputFlagInitialCapsWord,
+			kEditBoxInputFlagInitialCapsSentence,
+			kEditBoxInputFlagInitialCapsAllCharacters
+		};
+
+		typedef enum {
+			kCCTableViewFillTopDown,
+			kCCTableViewFillBottomUp
+		} CCTableViewVerticalFillOrder;
+
+		typedef struct
+		{
+			double r;       // percent
+			double g;       // percent
+			double b;       // percent
+			double a;       // percent
+		} RGBA;
+
+		typedef struct
+		{
+			double h;       // angle in degrees
+			double s;       // percent
+			double v;       // percent
+		} HSV;
+
+		enum
+		{
+			CCControlEventTouchDown           = 1 << 0,    // A touch-down event in the control.
+			CCControlEventTouchDragInside     = 1 << 1,    // An event where a finger is dragged inside the bounds of the control.
+			CCControlEventTouchDragOutside    = 1 << 2,    // An event where a finger is dragged just outside the bounds of the control.
+			CCControlEventTouchDragEnter      = 1 << 3,    // An event where a finger is dragged into the bounds of the control.
+			CCControlEventTouchDragExit       = 1 << 4,    // An event where a finger is dragged from within a control to outside its bounds.
+			CCControlEventTouchUpInside       = 1 << 5,    // A touch-up event in the control where the finger is inside the bounds of the control.
+			CCControlEventTouchUpOutside      = 1 << 6,    // A touch-up event in the control where the finger is outside the bounds of the control.
+			CCControlEventTouchCancel         = 1 << 7,    // A system event canceling the current touches for the control.
+			CCControlEventValueChanged        = 1 << 8      // A touch dragging or otherwise manipulating a control, causing it to emit a series of different values.
+		};
+		typedef unsigned int CCControlEvent;
+
+		enum
+		{
+			CCControlStateNormal       = 1 << 0, // The normal, or default state of a control. That is, enabled but neither selected nor highlighted.
+			CCControlStateHighlighted  = 1 << 1, // Highlighted state of a control. A control enters this state when a touch down, drag inside or drag enter is performed. You can retrieve and set this value through the highlighted property.
+			CCControlStateDisabled     = 1 << 2, // Disabled state of a control. This state indicates that the control is currently disabled. You can retrieve and set this value through the enabled property.
+			CCControlStateSelected     = 1 << 3  // Selected state of a control. This state indicates that the control is currently selected. You can retrieve and set this value through the selected property.
+		};
+		typedef unsigned int CCControlState;
+
+		typedef void (CCObject::*SEL_CCControlHandler)(CCObject*, CCControlEvent);
+
 		// http stuff
 		class CCHttpClient;
 		class CCHttpResponse;
@@ -6450,7 +6943,7 @@ namespace cocos2d
 			{
 				_pTarget = pTarget;
 				_pSelector = pSelector;
-				
+
 				if (_pTarget)
 					_pTarget->retain();
 			}
@@ -6533,7 +7026,7 @@ namespace cocos2d
 			std::string                 _tag;            /// user defined tag, to identify different requests in response callback
 			CCObject*          _pTarget;        /// callback target of pSelector function
 			SEL_HttpResponse            _pSelector;      /// callback function, e.g. MyLayer::onHttpResponse(CCHttpClient *sender, CCHttpResponse * response)
-			void*                       _pUserData;      /// You can add your customed data here 
+			void*                       _pUserData;      /// You can add your customed data here
 			std::vector<std::string>    _headers;		      /// custom http headers
 
 			// @note RobTop Addition
@@ -6556,7 +7049,7 @@ namespace cocos2d
 				_pHttpRequest = request;
 				if (_pHttpRequest)
 					_pHttpRequest->retain();
-				
+
 				_succeed = false;
 			}
 
@@ -6638,12 +7131,12 @@ namespace cocos2d
 
 		public:
 			// properties
-			CCHttpRequest*        _pHttpRequest;  /// the corresponding HttpRequest pointer who leads to this response 
+			CCHttpRequest*        _pHttpRequest;  /// the corresponding HttpRequest pointer who leads to this response
 			bool                _succeed;       /// to indecate if the http reqeust is successful simply
 			std::vector<char>   _responseData;  /// the returned raw data. You can also dump it as a string
 			std::vector<char>   _responseHeader;  /// the returned raw header data. You can also dump it as a string
 			int                 _responseCode;    /// the status code returned from libcurl, e.g. 200, 404
-			std::string         _errorBuffer;   /// if _responseCode != 200, please read _errorBuffer to find the reason 
+			std::string         _errorBuffer;   /// if _responseCode != 200, please read _errorBuffer to find the reason
 		};
 
 		class CCHttpClient : public CCObject
@@ -6662,7 +7155,7 @@ namespace cocos2d
 
 			inline void setTimeoutForRead(int value) {_timeoutForRead = value;};
 			inline int getTimeoutForRead() {return _timeoutForRead;};
-				
+
 		private:
 			CCHttpClient();
 			bool init(void);
@@ -6673,13 +7166,13 @@ namespace cocos2d
 			void dispatchResponseCallbacks(float delta);
 
 			// @note RobTop Addition
-			size_t availableThreadCount();
-			
+			std::size_t availableThreadCount();
+
 		private:
 			int _timeoutForConnect;
 			int _timeoutForRead;
 
-			// gd::string reqId;
+			// std::string reqId;
 		};
 
 
@@ -6692,9 +7185,23 @@ namespace cocos2d
 			virtual unsigned int getObjectID() = 0;
 		};
 
+		class CCArrayForObjectSorting : public CCArray
+		{
+		public:
+			CCArrayForObjectSorting() : CCArray() {}
+			void insertSortedObject(CCSortableObject* object);
+
+			void removeSortedObject(CCSortableObject* object);
+			void setObjectID_ofSortedObject(unsigned int tag, CCSortableObject* object);
+
+			CCSortableObject* objectWithObjectID(unsigned int tag);
+			CCSortableObject* getObjectWithObjectID(unsigned int tag);
+
+			unsigned int indexOfSortedObject(CCSortableObject* obj);
+		};
+
 
 		class CCScrollView;
-
 
 		class CCScrollViewDelegate
 		{
@@ -6703,7 +7210,6 @@ namespace cocos2d
 			virtual void scrollViewDidScroll(CCScrollView* view) = 0;
 			virtual void scrollViewDidZoom(CCScrollView* view) = 0;
 		};
-
 
 		class CCScrollView : public CCLayer
 		{
@@ -6823,6 +7329,124 @@ namespace cocos2d
 			std::map<int,int> m_mapScriptHandler;
 		};
 
+		class CCTableViewCell : public CCNode, public CCSortableObject
+		{
+		public:
+			CCTableViewCell() {}
+			unsigned int getIdx();
+			void setIdx(unsigned int uIdx);
+			void reset();
+
+			void setObjectID(unsigned int uIdx);
+			unsigned int getObjectID();
+		public:
+			unsigned int m_uIdx;
+		};
+
+		class CCTableView;
+
+		class CCTableViewDelegate : public CCScrollViewDelegate
+		{
+		public:
+			virtual void tableCellTouched(CCTableView* table, CCTableViewCell* cell) = 0;
+
+			virtual void tableCellHighlight(CCTableView* table, CCTableViewCell* cell){};
+
+			virtual void tableCellUnhighlight(CCTableView* table, CCTableViewCell* cell){};
+
+			virtual void tableCellWillRecycle(CCTableView* table, CCTableViewCell* cell){};
+
+		};
+
+		class CCTableViewDataSource
+		{
+		public:
+			virtual ~CCTableViewDataSource() {}
+
+			virtual CCSize tableCellSizeForIndex(CCTableView *table, unsigned int idx) {
+				return cellSizeForTable(table);
+			};
+			virtual CCSize cellSizeForTable(CCTableView *table) {
+				return CCSizeZero;
+			};
+			virtual CCTableViewCell* tableCellAtIndex(CCTableView *table, unsigned int idx) = 0;
+			virtual unsigned int numberOfCellsInTableView(CCTableView *table) = 0;
+		};
+
+		class CCTableView : public CCScrollView, public CCScrollViewDelegate
+		{
+		public:
+			CCTableView();
+			virtual ~CCTableView();
+
+			static CCTableView* create(CCTableViewDataSource* dataSource, CCSize size);
+			static CCTableView* create(CCTableViewDataSource* dataSource, CCSize size, CCNode *container);
+
+			CCTableViewDataSource* getDataSource() { return m_pDataSource; }
+			void setDataSource(CCTableViewDataSource* source) { m_pDataSource = source; }
+			CCTableViewDelegate* getDelegate() { return m_pTableViewDelegate; }
+			void setDelegate(CCTableViewDelegate* pDelegate) { m_pTableViewDelegate = pDelegate; }
+
+			void setVerticalFillOrder(CCTableViewVerticalFillOrder order);
+			CCTableViewVerticalFillOrder getVerticalFillOrder();
+
+			bool initWithViewSize(CCSize size, CCNode* container = NULL);
+			void updateCellAtIndex(unsigned int idx);
+			void insertCellAtIndex(unsigned int idx);
+			void removeCellAtIndex(unsigned int idx);
+			void reloadData();
+			CCTableViewCell *dequeueCell();
+			CCTableViewCell *cellAtIndex(unsigned int idx);
+
+			virtual void scrollViewDidScroll(CCScrollView* view);
+			virtual void scrollViewDidZoom(CCScrollView* view) {}
+
+			virtual bool ccTouchBegan(CCTouch *pTouch, CCEvent *pEvent);
+			virtual void ccTouchMoved(CCTouch *pTouch, CCEvent *pEvent);
+			virtual void ccTouchEnded(CCTouch *pTouch, CCEvent *pEvent);
+			virtual void ccTouchCancelled(CCTouch *pTouch, CCEvent *pEvent);
+
+		public:
+			CCTableViewCell *m_pTouchedCell;
+			CCTableViewVerticalFillOrder m_eVordering;
+			std::set<unsigned int>* m_pIndices;
+			std::vector<float> m_vCellsPositions;
+			CCArrayForObjectSorting* m_pCellsUsed;
+			CCArrayForObjectSorting* m_pCellsFreed;
+			CCTableViewDataSource* m_pDataSource;
+			CCTableViewDelegate* m_pTableViewDelegate;
+
+			CCScrollViewDirection m_eOldDirection;
+
+		protected:
+			int __indexFromOffset(CCPoint offset);
+			unsigned int _indexFromOffset(CCPoint offset);
+			CCPoint __offsetFromIndex(unsigned int index);
+			CCPoint _offsetFromIndex(unsigned int index);
+
+			void _moveCellOutOfSight(CCTableViewCell *cell);
+			void _setIndexForCell(unsigned int index, CCTableViewCell *cell);
+			void _addCellIfNecessary(CCTableViewCell * cell);
+
+			void _updateCellPositions();
+		public:
+			void _updateContentSize();
+
+			enum TableViewScriptEventType
+			{
+				kTableViewScroll   = 0,
+				kTableViewZoom,
+				kTableCellTouched,
+				kTableCellHighLight,
+				kTableCellUnhighLight,
+				kTableCellWillRecycle,
+				kTableCellSizeForIndex,
+				kTableCellSizeAtIndex,
+				kNumberOfCellsInTableView,
+			};
+			void unregisterAllScriptHandler();
+		};
+
 
 		class CCScale9Sprite : public CCNodeRGBA
 		{
@@ -6833,7 +7457,7 @@ namespace cocos2d
 		public:
 			CC_SYNTHESIZE_READONLY_NV(CCSize, m_originalSize, OriginalSize);
 
-			CC_PROPERTY(CCSize, m_preferredSize, PreferredSize); 
+			CC_PROPERTY(CCSize, m_preferredSize, PreferredSize);
 			CC_PROPERTY(CCRect, m_capInsets, CapInsets);
 			CC_PROPERTY(float, m_insetLeft, InsetLeft);
 			CC_PROPERTY(float, m_insetTop, InsetTop);
@@ -6846,7 +7470,7 @@ namespace cocos2d
 			bool   m_bSpriteFrameRotated;
 			CCRect m_capInsetsInternal;
 			bool m_positionsAreDirty;
-			
+
 			CCSpriteBatchNode* _scale9Image;
 			CCSprite* _topLeft;
 			CCSprite* _top;
@@ -6861,24 +7485,24 @@ namespace cocos2d
 			bool _opacityModifyRGB;
 			GLubyte _opacity;
 			ccColor3B _color;
-			
+
 			void updateCapInset();
 			void updatePositions();
 
 		public:
 			virtual void setContentSize(const CCSize & size);
 			virtual void visit();
-			
+
 			virtual bool init();
 
 			virtual bool initWithBatchNode(CCSpriteBatchNode* batchnode, CCRect rect, bool rotated, CCRect capInsets);
 			virtual bool initWithBatchNode(CCSpriteBatchNode* batchnode, CCRect rect, CCRect capInsets);
 			virtual bool initWithFile(const char* file, CCRect rect,  CCRect capInsets);
-			
+
 			static CCScale9Sprite* create(const char* file, CCRect rect,  CCRect capInsets);
 
 			virtual bool initWithFile(const char* file, CCRect rect);
-			
+
 			static CCScale9Sprite* create(const char* file, CCRect rect);
 
 			virtual bool initWithFile(CCRect capInsets, const char* file);
@@ -6888,17 +7512,17 @@ namespace cocos2d
 			virtual bool initWithFile(const char* file);
 
 			static CCScale9Sprite* create(const char* file);
-			
+
 			virtual bool initWithSpriteFrame(CCSpriteFrame* spriteFrame, CCRect capInsets);
 
-			static CCScale9Sprite* createWithSpriteFrame(CCSpriteFrame* spriteFrame, CCRect capInsets); 
+			static CCScale9Sprite* createWithSpriteFrame(CCSpriteFrame* spriteFrame, CCRect capInsets);
 			virtual bool initWithSpriteFrame(CCSpriteFrame* spriteFrame);
 
-			static CCScale9Sprite* createWithSpriteFrame(CCSpriteFrame* spriteFrame);  
+			static CCScale9Sprite* createWithSpriteFrame(CCSpriteFrame* spriteFrame);
 
 			virtual bool initWithSpriteFrameName(const char*spriteFrameName, CCRect capInsets);
 
-			static CCScale9Sprite* createWithSpriteFrameName(const char*spriteFrameName, CCRect capInsets); 
+			static CCScale9Sprite* createWithSpriteFrameName(const char*spriteFrameName, CCRect capInsets);
 
 			virtual bool initWithSpriteFrameName(const char*spriteFrameName);
 
@@ -6909,7 +7533,7 @@ namespace cocos2d
 			static CCScale9Sprite* create();
 
 			// @note RobTop Addition
-			void setBlendAdditive(bool additive);		
+			void setBlendAdditive(bool additive);
 
 			// optional
 
@@ -6924,7 +7548,7 @@ namespace cocos2d
 			virtual bool updateWithBatchNode(CCSpriteBatchNode* batchnode, CCRect rect, bool rotated, CCRect capInsets);
 
 			virtual void setSpriteFrame(CCSpriteFrame * spriteFrame);
-			
+
 			virtual void updateDisplayedOpacity(GLubyte parentOpacity);
 			virtual void updateDisplayedColor(const cocos2d::ccColor3B& parentColor);
 		};
@@ -6942,7 +7566,7 @@ namespace cocos2d
 			CC_SYNTHESIZE_READONLY(SEL_CCControlHandler, m_action, Action);
 			CC_SYNTHESIZE_READONLY(CCObject*, m_target, Target);
 			CC_SYNTHESIZE_READONLY(CCControlEvent, m_controlEvent, ControlEvent);
-			
+
 		public:
 			static CCInvocation* create(CCObject* target, SEL_CCControlHandler action, CCControlEvent controlEvent);
 			CCInvocation(CCObject* target, SEL_CCControlHandler action, CCControlEvent controlEvent);
@@ -6955,7 +7579,7 @@ namespace cocos2d
 			//CCRGBAProtocol
 			bool m_bIsOpacityModifyRGB;
 
-			/** The current control state constant. 
+			/** The current control state constant.
 			* @note Robtop Addition: Made non virtual
 			*/
 			CC_SYNTHESIZE_READONLY_NV(CCControlState, m_eState, State);
@@ -6973,7 +7597,7 @@ namespace cocos2d
 			virtual bool isHighlighted();
 			bool hasVisibleParents();
 			virtual void needsLayout();
-			
+
 			virtual bool isOpacityModifyRGB();
 			virtual void setOpacityModifyRGB(bool bOpacityModifyRGB);
 
@@ -6986,7 +7610,7 @@ namespace cocos2d
 
 		public:
 			CCControl();
-			
+
 			virtual bool init(void);
 			virtual ~CCControl();
 
@@ -7015,7 +7639,7 @@ namespace cocos2d
 			static CCControl* create();
 
 		public:
-			void addHandleOfControlEvent(int nFunID,CCControlEvent controlEvent);
+			void addHandleOfControlEvent(int nFunID, CCControlEvent controlEvent);
 			void removeHandleOfControlEvent(CCControlEvent controlEvent);
 
 		private:
@@ -7039,7 +7663,7 @@ namespace cocos2d
 		protected:
 			int         boxPos;
 			int         boxSize;
-			
+
 		public:
 			CCControlSaturationBrightnessPicker();
 			virtual ~CCControlSaturationBrightnessPicker();
@@ -7054,7 +7678,7 @@ namespace cocos2d
 			// @note RobTop Addition
 			virtual void registerWithTouchDispatcher();
 
-		protected:    
+		protected:
 			void updateSliderPosition(CCPoint location);
 			bool checkSliderPosition(CCPoint location);
 
@@ -7084,7 +7708,7 @@ namespace cocos2d
 			// @note RobTop Addition
 			virtual void registerWithTouchDispatcher();
 
-		protected:    
+		protected:
 			void updateSliderPosition(CCPoint location);
 			bool checkSliderPosition(CCPoint location);
 
@@ -7093,7 +7717,7 @@ namespace cocos2d
 		};
 
 		class CCControlColourPicker : public CCControl
-		{	
+		{
 		public:
 			// @note RobTop Addition
 			ccColor3B const& getColorValue() const;
@@ -7108,7 +7732,7 @@ namespace cocos2d
 			ccColor3B m_rgb;
 			HSV m_hsv;
 			CC_SYNTHESIZE_RETAIN(CCControlSaturationBrightnessPicker*, m_colourPicker, colourPicker)
-			
+
 			CC_SYNTHESIZE_RETAIN(CCControlHuePicker*, m_huePicker, HuePicker)
 			CC_SYNTHESIZE_RETAIN(CCSprite*, m_background, Background)
 
@@ -7116,8 +7740,8 @@ namespace cocos2d
 			CC_SYNTHESIZE_NV(CCSprite*, m_colorTarget, ColorTarget)
 			// @note RobTop Addition
 			CC_SYNTHESIZE_NV(ColorPickerDelegate*, m_delegate, Delegate)
-			
-			
+
+
 		public:
 			// @note RobTop Addition: renamed create to colourPicker
 			static CCControlColourPicker* colourPicker();
@@ -7130,7 +7754,7 @@ namespace cocos2d
 			void hueSliderValueChanged(CCObject* sender, CCControlEvent controlEvent);
 			void colourSliderValueChanged(CCObject* sender, CCControlEvent controlEvent);
 
-		protected:    
+		protected:
 			void updateControlPicker();
 			void updateHueAndControlPicker();
 			virtual bool ccTouchBegan(CCTouch* touch, CCEvent* pEvent);

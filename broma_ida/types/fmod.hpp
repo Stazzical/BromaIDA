@@ -188,6 +188,16 @@ typedef enum FMOD_SPEAKER
 	FMOD_SPEAKER_FORCEINT = 65536
 } FMOD_SPEAKER;
 
+typedef enum FMOD_PLUGINTYPE
+{
+	FMOD_PLUGINTYPE_OUTPUT,
+	FMOD_PLUGINTYPE_CODEC,
+	FMOD_PLUGINTYPE_DSP,
+
+	FMOD_PLUGINTYPE_MAX,
+	FMOD_PLUGINTYPE_FORCEINT = 65536
+} FMOD_PLUGINTYPE;
+
 typedef enum FMOD_DSP_RESAMPLER
 {
 	FMOD_DSP_RESAMPLER_DEFAULT,
@@ -200,15 +210,13 @@ typedef enum FMOD_DSP_RESAMPLER
 	FMOD_DSP_RESAMPLER_FORCEINT = 65536
 } FMOD_DSP_RESAMPLER;
 
-typedef enum FMOD_PLUGINTYPE
+typedef enum FMOD_DSP_CALLBACK_TYPE
 {
-	FMOD_PLUGINTYPE_OUTPUT,
-	FMOD_PLUGINTYPE_CODEC,
-	FMOD_PLUGINTYPE_DSP,
+    FMOD_DSP_CALLBACK_DATAPARAMETERRELEASE,
 
-	FMOD_PLUGINTYPE_MAX,
-	FMOD_PLUGINTYPE_FORCEINT = 65536
-} FMOD_PLUGINTYPE;
+    FMOD_DSP_CALLBACK_MAX,
+    FMOD_DSP_CALLBACK_FORCEINT = 65536
+} FMOD_DSP_CALLBACK_TYPE;
 
 typedef enum FMOD_DSPCONNECTION_TYPE
 {
@@ -439,6 +447,7 @@ typedef unsigned int FMOD_MEMORY_TYPE;
 typedef FMOD_RESULT (F_CALL *FMOD_DEBUG_CALLBACK)           (FMOD_DEBUG_FLAGS flags, const char *file, int line, const char* func, const char* message);
 typedef FMOD_RESULT (F_CALL *FMOD_SYSTEM_CALLBACK)          (FMOD_SYSTEM *system, FMOD_SYSTEM_CALLBACK_TYPE type, void *commanddata1, void* commanddata2, void *userdata);
 typedef FMOD_RESULT (F_CALL *FMOD_CHANNELCONTROL_CALLBACK)  (FMOD_CHANNELCONTROL *channelcontrol, FMOD_CHANNELCONTROL_TYPE controltype, FMOD_CHANNELCONTROL_CALLBACK_TYPE callbacktype, void *commanddata1, void *commanddata2);
+typedef FMOD_RESULT (F_CALL *FMOD_DSP_CALLBACK)             (FMOD_DSP *dsp, FMOD_DSP_CALLBACK_TYPE type, void *data);
 typedef FMOD_RESULT (F_CALL *FMOD_SOUND_NONBLOCK_CALLBACK)  (FMOD_SOUND *sound, FMOD_RESULT result);
 typedef FMOD_RESULT (F_CALL *FMOD_SOUND_PCMREAD_CALLBACK)   (FMOD_SOUND *sound, void *data, unsigned int datalen);
 typedef FMOD_RESULT (F_CALL *FMOD_SOUND_PCMSETPOS_CALLBACK) (FMOD_SOUND *sound, int subsound, unsigned int position, FMOD_TIMEUNIT postype);
@@ -845,6 +854,16 @@ typedef struct FMOD_REVERB_PROPERTIES
 	float WetLevel;
 } FMOD_REVERB_PROPERTIES;
 
+typedef struct FMOD_CPU_USAGE
+{
+    float           dsp;
+    float           stream;
+    float           geometry;
+    float           update;
+    float           convolution1;
+    float           convolution2;
+} FMOD_CPU_USAGE;
+
 
 namespace FMOD
 {
@@ -907,6 +926,7 @@ namespace FMOD
 		FMOD_RESULT F_API getChannelFormat       (FMOD_CHANNELMASK *channelmask, int *numchannels, FMOD_SPEAKERMODE *source_speakermode);
 		FMOD_RESULT F_API getOutputChannelFormat (FMOD_CHANNELMASK inmask, int inchannels, FMOD_SPEAKERMODE inspeakermode, FMOD_CHANNELMASK *outmask, int *outchannels, FMOD_SPEAKERMODE *outspeakermode);
 		FMOD_RESULT F_API reset                  ();
+		FMOD_RESULT F_API setCallback            (FMOD_DSP_CALLBACK callback);
 
 		// DSP parameter control.
 		FMOD_RESULT F_API setParameterFloat      (int index, float value);
@@ -1168,7 +1188,7 @@ namespace FMOD
 		FMOD_RESULT F_API getVersion              (unsigned int *version);
 		FMOD_RESULT F_API getOutputHandle         (void **handle);
 		FMOD_RESULT F_API getChannelsPlaying      (int *channels, int *realchannels = 0);
-		FMOD_RESULT F_API getCPUUsage             (float *dsp, float *stream, float *geometry, float *update, float *total);
+		FMOD_RESULT F_API getCPUUsage             (FMOD_CPU_USAGE *usage);
 		FMOD_RESULT F_API getFileUsage            (long long *sampleBytesRead, long long *streamBytesRead, long long *otherBytesRead);
 
 		// Sound/DSP/Channel/FX creation and retrieval.

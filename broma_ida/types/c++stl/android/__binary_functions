@@ -20,8 +20,8 @@ namespace std
 		bool pad; // idaclang considers empty classes to have a size of 0, which fucks up the size of map and umap
 		typedef bool __result_type;  // used by valarray
 	};
-	
-	
+
+
 	template <class _Tp = void>
 	struct equal_to
 		: __binary_function<_Tp, _Tp, bool>

@@ -44,11 +44,11 @@ namespace std
 	template<class T>
 	struct add_lvalue_reference
 		: decltype(__detail::try_add_lvalue_reference<T>(0)) {};
-	
+
 	template<class T>
 	struct add_rvalue_reference
 		: decltype(__detail::try_add_rvalue_reference<T>(0)) {};
-		
+
 	template<typename T>
 	typename std::add_rvalue_reference<T>::type declval() noexcept
 	{
@@ -66,7 +66,7 @@ namespace std
 	template<class T> struct add_cv { typedef const volatile T type; };
 	template <class T>
 	using add_cv_t = typename add_cv<T>::type;
-	
+
 
 	template <class...>
 	using __void_t = void;
@@ -93,12 +93,12 @@ namespace std
 	template<class T> struct remove_cvref<const volatile T&> { typedef T type; };
 	template <class T>
 	using remove_cvref_t = typename remove_cvref<T>::type;
-	
+
 	template<class T> struct remove_const { typedef T type; };
 	template<class T> struct remove_const<const T> { typedef T type; };
 	template <class T>
 	using remove_const_t = typename remove_const<T>::type;
-	
+
 	template<class T> struct remove_volatile { typedef T type; };
 	template<class T> struct remove_volatile<volatile T> { typedef T type; };
 	template <class T>

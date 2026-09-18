@@ -22,7 +22,7 @@ namespace stl
 	template<class T>
 	auto try_add_rvalue_reference(int) -> __type_identity<T&&>;
 	template<class T>
-	auto try_add_rvalue_reference(...) -> __type_identity<T>;	
+	auto try_add_rvalue_reference(...) -> __type_identity<T>;
 }
 
 namespace std
@@ -30,11 +30,11 @@ namespace std
 	template <class...>
 	using __void_t = void;
 
-	
+
 	template <class _Tp> struct remove_reference        { using type = _Tp; };
 	template <class _Tp> struct remove_reference<_Tp&>  { using type = _Tp; };
 	template <class _Tp> struct remove_reference<_Tp&&> { using type = _Tp; };
-	
+
 	template <class _Tp>
 	using remove_reference_t = typename remove_reference<_Tp>::type;
 
@@ -47,34 +47,34 @@ namespace std
 	typename add_rvalue_reference<T>::type declval() noexcept
 	{ static_assert(false, "declval not allowed in an evaluated context"); }
 
-	
+
 	template<class _Tp> struct type_identity { typedef _Tp type; };
 	template<class _Tp> using type_identity_t = typename type_identity<_Tp>::type;
 
 
 	template<std::size_t _Len, std::size_t _Align>
 	struct aligned_storage
-	{ 
+	{
 		union type
 		{
 			unsigned char __data[_Len];
-			struct __attribute__((__aligned__((_Align)))) { } __align; 
+			struct __attribute__((__aligned__((_Align)))) { } __align;
 		};
 	};
-	
-	
+
+
 	template <class _Ty, _Ty _Val>
 	struct integral_constant {
 		static constexpr _Ty value = _Val;
-		
+
 		using value_type = _Ty;
 		using type       = integral_constant;
-		
+
 		constexpr operator value_type() const noexcept {
 			return value;
 		}
 	};
-	
+
 
 	template<typename _Tp>
 	struct alignment_of
@@ -106,10 +106,10 @@ namespace std
 
 	template<class...>
 	struct conjunction : std::true_type {};
-	
+
 	template<class B1>
 	struct conjunction<B1> : B1 {};
-	
+
 	template<class B1, class... Bn>
 	struct conjunction<B1, Bn...>
 		: std::conditional<bool(B1::value), conjunction<Bn...>, B1>::type {};
