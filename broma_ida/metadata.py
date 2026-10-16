@@ -1,4 +1,4 @@
-__version__ = "8.1.1"
+__version__ = "8.2.0"
 __author__ = "SpaghettDev"
 __maintainer__ = "Stazzical"
 __credits__ = ["Calloc", "prevter", "iAndy_HD3", "undefined06855"]

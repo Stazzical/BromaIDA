@@ -3,7 +3,8 @@ from functools import cache
 from struct import unpack
 from pathlib import Path
 from hashlib import sha256
-from re import fullmatch
+from re import fullmatch, compile
+from enum import Enum, auto
 
 from ida_idaapi import BADADDR
 from ida_kernwin import ASKBTN_BTN1
@@ -23,12 +24,16 @@ from ida_funcs import (
 )
 from ida_typeinf import (
     func_type_data_t as ida_func_type_data_t,
+    udt_type_data_t as ida_udt_type_data_t,
     funcarg_t as ida_funcarg_t,
     tinfo_t as ida_tinfo_t,
+    argloc_t as ida_argloc_t,
+    calc_retloc,
     get_idati, apply_tinfo,
     parse_decl as ida_parse_decl,
-    PT_SIL, BT_VOID,
-    TINFO_DEFINITE,
+    PT_SIL, BT_VOID, BT_INT,
+    TERR_OK, BTF_STRUCT, TCMP_DECL,
+    TINFO_DEFINITE, CM_CC_MASK,
     FAI_RETPTR, FAI_STRUCT
 )
 from ida_nalt import (
@@ -40,9 +45,11 @@ from ida_dirtree import (
     dirtree_visitor_t as ida_dirtree_visitor_t,
     dirtree_cursor_t as ida_dirtree_cursor_t,
     direntry_t as ida_direntry_t,
-    dirtree_t as ida_dirtree_t
+    dirtree_t as ida_dirtree_t,
+    DIRTREE_LOCAL_TYPES
 )
 from ida_pro import IDA_SDK_VERSION
+from ida_ida import inf_get_cc_cm
 
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.broma.argtype import ArgType, RetType
@@ -63,6 +70,14 @@ TreeType = int | ida_dirtree_t
 DirtreeEntry = tuple[ida_direntry_t, str]
 
 
+class TypeState(Enum):
+    """Enum for the state of a type in the IDA type library."""
+    MISSING = auto()
+    FORWARD = auto()
+    BROKEN = auto()
+    OK = auto()
+
+
 def stop(reason: str | None = None) -> NoReturn:
     """Kills the plugin process."""
     raise SystemExit if reason is None else Exception(reason)
@@ -70,6 +85,8 @@ def stop(reason: str | None = None) -> NoReturn:
 
 class IDAUtils:
     """Collection of utilities to work with IDA indirectly."""
+
+    _CLASS_NAME_RE = compile(r"^[A-Za-z_]\w*(::[A-Za-z_]\w*)*$")
 
     # Mach-O Load commands
     _MINIMUM_OS_VERSION_LOAD_COMMAND = 0x32
@@ -235,6 +252,7 @@ class IDAUtils:
             elif bitness == 0x2:
                 return "android64"
 
+        # TODO: actual user-facing prompt to show this, or make it be handled elsewhere
         raise RuntimeError("no supported target platform was found for the currently open binary")
 
     @staticmethod
@@ -357,6 +375,72 @@ class IDAUtils:
         return Path(idadir(path))
 
     @staticmethod
+    def is_nontrivial_for_calls(tif: ida_tinfo_t, known_nontrivials: set[str]) -> bool:
+        """Aggregates that always travel through memory, regardless of size."""
+        if tif is None or not tif.is_udt() or tif.is_forward_decl():
+            return False
+
+        names = {n for n in (tif.get_type_name(), tif.get_final_type_name()) if isinstance(n, str)}
+
+        # STL types are non-trivial
+        if any(n.startswith("std::") or n in known_nontrivials for n in names):
+            return True
+
+        udt = ida_udt_type_data_t()
+        if not tif.get_udt_details(udt):
+            return False
+
+        for member in udt:
+            if member.is_vftable():
+                return True
+
+            mt = member.type
+
+            while mt.is_array():
+                mt = mt.get_array_element()
+
+            if mt.is_udt() and IDAUtils.is_nontrivial_for_calls(mt, known_nontrivials):
+                return True
+
+        return False
+
+    @staticmethod
+    def can_return_in_registers(tif: ida_tinfo_t) -> bool:
+        """For trivial aggregates only."""
+        return calc_retloc(ida_argloc_t(), tif, inf_get_cc_cm() & CM_CC_MASK)
+
+    # this is stupid but i don't wanna resolve the type twice so i'll pass it to it
+    @staticmethod
+    def needs_retptr(
+        ret: "RetType",
+        resolved: ida_tinfo_t | None,
+        known_nontrivials: set[str]
+    ) -> bool:
+        if resolved is None or ret.is_ptr_or_ref or not resolved.is_udt():
+            return False
+
+        if ret.is_stl or IDAUtils.is_nontrivial_for_calls(resolved, known_nontrivials):
+            return True
+
+        return not IDAUtils.can_return_in_registers(resolved)
+
+    @staticmethod
+    def same_declared_type(a: ida_tinfo_t, b: ida_tinfo_t) -> bool:
+        return a.compare_with(b, TCMP_DECL)
+
+    @staticmethod
+    def native_int_type() -> ida_tinfo_t:
+        t = ida_tinfo_t()
+        t.create_simple_type(BT_INT)
+        return t
+
+    @staticmethod
+    def native_void_type() -> ida_tinfo_t:
+        t = ida_tinfo_t()
+        t.create_simple_type(BT_VOID)
+        return t
+
+    @staticmethod
     def get_function_info(
         ida_ea: int,
         force: bool = False
@@ -434,12 +518,13 @@ class IDAUtils:
         is_static: bool = False,
         is_variadic: bool = False,
         callconv: IDACallingConvention = IDACallingConvention.unknown,
+        known_nontrivials: set[str] = set(),
         class_name: str = ""
     ) -> bool:
         """
         Builds and applies a complete function signature at `ea` by
         resolving the return type and every parameter against IDA's
-        type library (`IDAUtils.resolve_type_tinfo`),
+        type library (using `IDAUtils.resolve_type_tinfo`),
         then constructing and applying a `func_type_data_t` directly.
 
         Args:
@@ -449,19 +534,51 @@ class IDAUtils:
                 NOT including the implicit `this` argument.
             is_static (bool, optional): Whether the function is
                 static (no implicit `this` argument). Defaults to False.
+            is_variadic (bool, optional): Whether the function is
+                variadic (has '...' ellipsis). Defaults to False.
+            callconv (IDACallingConvention, optional): The
+                calling convention for the function to be applied.
+            known_nontrivials (set[str], optional): A set of
+                types known not trivially copyable.
             class_name (str, optional): The owning class's name,
                 used to build the implicit `this` argument if not empty.
 
         Returns:
             bool: True on success.
         """
-        resolved_ret = IDAUtils.resolve_type_tinfo(ret)
-        if resolved_ret is None:
-            print(
-                "[!] IDAUtils: Couldn't resolve return type "
-                f"'{ret.type}' for function at {hex(ea)}!"
+        resolved_ret: ida_tinfo_t | None = None
+        retptr_entry: tuple[str, ida_tinfo_t, int] | None = None
+        existing_info = None
+
+        # process the return type, decide if we need a __return_ptr argument applied
+        if ret.is_unknown:
+            # keep whatever IDA currently guessed
+            existing_info = IDAUtils.get_function_info(ea)
+            final_rettype = (
+                existing_info.rettype if existing_info is not None
+                else IDAUtils.native_int_type()
             )
-            return False
+            for existing_arg in (list(existing_info) if existing_info is not None else []):
+                # keep a __return_ptr arg if it existed from before
+                if existing_arg.flags & FAI_RETPTR:
+                    retptr_entry = (existing_arg.name, existing_arg.type, existing_arg.flags)
+                    break
+            needs_retptr = retptr_entry is not None
+        else:
+            resolved_ret = IDAUtils.resolve_type_tinfo(ret)
+            if resolved_ret is None:
+                print(
+                    "[!] IDAUtils: Couldn't resolve return type "
+                    f"'{ret.type}' for function at {hex(ea)}!"
+                )
+                return False
+            final_rettype = resolved_ret
+            needs_retptr = IDAUtils.needs_retptr(ret, resolved_ret, known_nontrivials)
+            if needs_retptr:
+                retptr_tinfo = ida_tinfo_t()
+                retptr_tinfo.create_ptr(resolved_ret)
+                retptr_entry = ("retstr", retptr_tinfo, FAI_RETPTR | FAI_STRUCT)
+                final_rettype = retptr_tinfo
 
         this_entry: tuple[str, ida_tinfo_t, int] | None = None
         if not is_static and class_name != "":
@@ -490,16 +607,6 @@ class IDAUtils:
 
             resolved_args.append((arg.name, tinfo, 0))
 
-        needs_retptr = resolved_ret.is_udt()
-
-        retptr_entry: tuple[str, ida_tinfo_t, int] | None = None
-        final_rettype = resolved_ret
-        if needs_retptr:
-            retptr_tinfo = ida_tinfo_t()
-            retptr_tinfo.create_ptr(resolved_ret)
-            retptr_entry = ("retstr", retptr_tinfo, FAI_RETPTR | FAI_STRUCT)
-            final_rettype = retptr_tinfo
-
         itanium_abi = IDAUtils.get_platform() != "win"
 
         ordered: list[tuple[str, ida_tinfo_t, int]] = []
@@ -527,7 +634,7 @@ class IDAUtils:
         func_tinfo = ida_tinfo_t()
         if not func_tinfo.create_func(function_data):
             print(
-                "[!] IDAUtils: Couldn't construct a function type "
+                "[!] IDAUtils: Couldn't construct type information "
                 f"for function at {hex(ea)}!"
             )
             return False
@@ -556,6 +663,7 @@ class IDAUtils:
 
         # skimmed thru 2.2082 and 450 seemed to be the size where
         # library and random garbage funcs became actual functions
+        # TODO: spend some time understanding what this is about and make it more universal
         if IDAUtils.get_platform() == "win":
             if ida_is_lib and func.size() >= 450:
                 func.flags &= ~FUNC_LIB
@@ -564,28 +672,52 @@ class IDAUtils:
         return False
 
     @staticmethod
-    def get_type_info(name: str) -> ida_tinfo_t | None:
+    def declare_forward_decl(name: str) -> ida_tinfo_t | None:
+        """Registers `name` in the til as a forward-declaration."""
+        if not IDAUtils._CLASS_NAME_RE.match(name):
+            return None
+
+        fwd = ida_tinfo_t()
+        if fwd.create_forward_decl(get_idati(), BTF_STRUCT, name) != TERR_OK:
+            return None
+
+        # keep it with the other BromaIDA types
+        # TODO: make this take the dirtree path as an argument from the function
+        get_std_dirtree(DIRTREE_LOCAL_TYPES).rename(f"/{name}", f"/BromaIDA/{name}")
+        return fwd
+
+    @staticmethod
+    def get_type_info(
+        name: str,
+        allow_forward_decl: bool = False
+    ) -> ida_tinfo_t | None:
         """
         Gets the info about a type from IDA's type library.
         Returns None if the type is considered incorrect
         by IDA with `ida_tinfo.tinfo_t.is_correct()`.
+        If `allow_forward_decl` is `True`, the type is
+        returned regardless if it's forward-declared.
 
         Args:
             name (str): The name of the type/struct.
+            allow_forward_decl (bool, optional)
 
         Returns:
             ida_typeinf.tinfo_t | None
         """
         tif = ida_tinfo_t()
-        return (
-            tif
-            if tif.get_named_type(get_idati(), name)
-            and tif.is_correct()
-            else None
-        )
+        if not tif.get_named_type(get_idati(), name):
+            return None
+
+        if tif.is_forward_decl():
+            # IDAClang imports forward-only structs as forward declarations.
+            # is_correct() is False for those, but they're valid behind a pointer
+            return tif if allow_forward_decl else None
+
+        return tif if tif.is_correct() else None
 
     @staticmethod
-    def resolve_bare_type(name: str) -> ida_tinfo_t | None:
+    def resolve_bare_type(name: str, allow_forward_decl: bool = False) -> ida_tinfo_t | None:
         """
         Resolves a bare type name (no const/ptr/ref decoration) to a
         tinfo_t. Tries the IDA type library first, then falls back
@@ -593,6 +725,7 @@ class IDAUtils:
 
         Args:
             name (str)
+            allow_forward_decl (bool, optional)
 
         Returns:
             ida_typeinf.tinfo_t | None
@@ -602,11 +735,9 @@ class IDAUtils:
 
         # we can't get this with parse_decl
         if name == "void":
-            tif = ida_tinfo_t()
-            tif.create_simple_type(BT_VOID)
-            return tif
+            return IDAUtils.native_void_type()
 
-        tif = IDAUtils.get_type_info(name)
+        tif = IDAUtils.get_type_info(name, allow_forward_decl)
         if tif is not None:
             return tif
 
@@ -635,18 +766,20 @@ class IDAUtils:
             arg.stripped_expanded_type if arg.is_stl
             else arg.stripped_type
         )
-        base = IDAUtils.resolve_bare_type(bare_name)
+        by_ref = arg.is_ptr_or_ref
+        base = IDAUtils.resolve_bare_type(bare_name, allow_forward_decl=by_ref)
 
-        if base is None and arg.is_ptr_or_ref:
-            # recreate the type as a forward-declaration if the bare type doesn't exist
-            # pointer/reference types are still correct even without the definition
-            fwd = ida_tinfo_t()
-            if ida_parse_decl(
-                fwd, get_idati(), f"struct {bare_name} {{}};", PT_SIL
-            ) is not None and fwd.is_correct():
-                base = fwd
+        if base is None and by_ref:
+            base = IDAUtils.declare_forward_decl(bare_name)
 
         if base is None:
+            return None
+
+        # create_func accepts these but the result is is_correct() == False
+        if base.is_forward_decl() and not by_ref:
+            print(
+                "[!] IDAUtils: Can't use forward-declared type "
+                f"'{bare_name}' by value!")
             return None
 
         if arg.is_const:
@@ -662,18 +795,22 @@ class IDAUtils:
         return base
 
     @staticmethod
-    def is_corrupted_type(t: ida_tinfo_t | None) -> bool:
-        """
-        True only if `t` exists but is structurally broken
-        (BADADDR size or an unresolved forward-declaration).
+    def get_type_state(name: str | ida_tinfo_t) -> "TypeState":
+        if isinstance(name, str):
+            tif = ida_tinfo_t()
 
-        Args:
-            t (ida_typeinf.tinfo_t | None)
+            if not tif.get_named_type(get_idati(), name):
+                return TypeState.MISSING
+        else:
+            tif = name
 
-        Returns:
-            bool
-        """
-        return t is not None and (t.get_size() == BADADDR or t.is_forward_decl())
+        if tif.is_forward_decl():
+            return TypeState.FORWARD
+
+        if not tif.is_correct() or tif.get_size() == BADADDR:
+            return TypeState.BROKEN
+
+        return TypeState.OK
 
     @staticmethod
     def types_equivalent(name_a: str, name_b: str) -> bool:

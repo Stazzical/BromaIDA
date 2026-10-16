@@ -91,6 +91,13 @@ class ArgType:
 class RetType(ArgType):
     """A function return type."""
 
+    _UNKNOWN = frozenset({"", "auto", "TodoReturn"})
+
+    @property
+    def is_unknown(self) -> bool:
+        """Broma placeholders meaning 'return type not known'."""
+        return self.stripped_type in RetType._UNKNOWN
+
     @classmethod
     def void_type(cls) -> "RetType":
         """A plain `void` return type."""

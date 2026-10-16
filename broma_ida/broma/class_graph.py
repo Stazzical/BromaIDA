@@ -439,6 +439,9 @@ class ClassGraph:
         visiting: set[str] = set()
 
         def visit(name: str, predecessor: str = ""):
+            if name in visited:
+                return
+
             if name in visiting:
                 print(
                     "[!] ClassGraph: Cyclic dependency detected between "
@@ -446,23 +449,14 @@ class ClassGraph:
                 )
                 return
 
-            if name in visited:
+            # bare namespace names and header-defined classes (cocos2d.hpp etc.) aren't Broma classes,
+            # so there's nothing to order since they are emitted before the Broma ones
+            hard_deps = None if name in self._namespace_prefixes else self._get_hard_deps(name)
+            if hard_deps is None:
+                visited.add(name)
                 return
 
             visiting.add(name)
-
-            # skip bare namespace names entirely
-            if name in self._namespace_prefixes:
-                visiting.remove(name)
-                return
-
-            hard_deps = self._get_hard_deps(name)
-            if hard_deps is None:
-                print(
-                    "[!] ClassGraph: Could not retrieve hard dependencies "
-                    f"list for class '{name}'!"
-                )
-                return
 
             for dep in hard_deps:
                 visit(dep, name)

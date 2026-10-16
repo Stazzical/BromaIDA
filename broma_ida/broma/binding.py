@@ -195,17 +195,17 @@ class FunctionSignature:
 
     def get_args_str(
         self,
-        include_this_arg: bool = True,
-        expand_stl: bool = False
+        include_this_arg: bool = False,
+        include_arg_names: bool = True
     ) -> str:
         """
         Gets a function's arguments signature string.
 
         Args:
-            include_this_arg (bool, optional): Include the `this` argument.
+            include_this_arg (bool, optional): Include the `this` parameter.
+                Defaults to False.
+            include_arg_names (bool, optional): Include parameter names.
                 Defaults to True.
-            expand_stl (bool, optional): Uses STL-expanded types instead
-                of normal ones. Defaults to False.
 
         Returns:
             str
@@ -224,7 +224,7 @@ class FunctionSignature:
             args = args[1:]
 
         parts = [
-            arg.expanded_type if expand_stl
+            arg.type if not include_arg_names
             else str(arg)
             for arg in args
         ]
@@ -256,7 +256,7 @@ class FunctionSignature:
             f"{'static ' if self.is_static else ''}"
             f"{'virtual ' if self.is_virtual else ''}"
             f"{self.ret.type + ' ' if self.ret.type and not self.is_ctor_dtor else ''}"
-            f"{self.name}({self.get_args_str(include_this_arg=False)})"
+            f"{self.name}({self.get_args_str()})"
             f"{' const;' if self.is_const else ';'}"
         )
 

@@ -19,6 +19,8 @@ BROMA_PLATFORM_GROUPS = {
 
 BROMA_CALLING_CONVENTIONS = Literal[
     "default", "thiscall",
+    # these should just be manually defined in broma files with attributes to map memory
+    # compiler optimizations aren't universal and these are specific to geometry dash
     "optcall",      # compiler-optimized fastcall, MSVC Win32 only, not a real call conv
     "membercall"    # compiler-optimized thiscall, MSVC Win32 only, not a real call conv
 ]
@@ -41,15 +43,15 @@ class IDACallingConvention(IntEnum):
     """Unknown calling convention."""
     voidarg = CM_CC_VOIDARG     # = 0x20
     """
-    Represents an empty function prototype 'f()'
-    with a valid calling convention and 0 arguments.
+    Represents an empty function prototype 'func()'
+    with a valid calling convention and 0 real arguments.
     """
     cdecl = CM_CC_CDECL         # = 0x30
     """__cdecl"""
     ellipsis = CM_CC_ELLIPSIS   # = 0x40
     """
     Calling convention for variadic functions.
-    Handled internally between different architectures and bitnesses.
+    Handled internally by IDA between different architectures and bitnesses.
     """
     stdcall = CM_CC_STDCALL     # = 0x50
     """__stdcall, only relevant on 32-bit."""

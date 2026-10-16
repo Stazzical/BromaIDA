@@ -13,7 +13,7 @@ Smartly processes the Broma files from the [Geometry Dash Geode bindings](https:
 
 - Importing bindings
   - Symbol import for functions on platforms that lack them.
-- Importing types (see [Importing Types](#importing-types)). If enabled, will preform the following:
+- Importing types (see [Importing Types](#importing-types)). If enabled, will perform the following:
   - Import Broma class members and virtual function tables
   - Import function return types, arguments types and names
   - Attempt to fix the signature of functions guessed by IDA
@@ -47,7 +47,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-1. Press the `Ctrl-Shift-B` hotkey, or from the Top Bar go through Edit -> Plugins -> BromaIDA (you may need to switch to other subviews) to open the main plugin window.
+1. Press the `Ctrl+Shift+B` hotkey combination, or from the Top Bar go through Edit -> Plugins -> BromaIDA (you may need to switch to other subviews) to open the main plugin window.
 2. Select your preferred process of importing ~~or exporting~~ bindings. You may also open the 'Settings' menu to change your preferences. See [BromaIDA Settings](#bromaida-settings).
 3. Follow all instructions and prompts shown on screen until the process is finished.
 

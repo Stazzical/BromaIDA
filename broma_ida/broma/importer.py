@@ -42,7 +42,7 @@ from broma_ida.utils import (
     CppUtils, STLNode, STLUtils
 )
 from broma_ida.ida_utils import (
-    IDAUtils, DirtreeEntry,
+    IDAUtils, DirtreeEntry, TypeState,
     stop, HAS_IDACLANG
 )
 
@@ -97,12 +97,12 @@ class VerifyUtils:
         return IDAUtils.types_equivalent(node_a.name, node_b.name)
 
     @staticmethod
-    def _stub_matches(stub: STLStubDefinition) -> bool:
+    def _stub_matches(stub: STLStubDefinition, must_exist: bool = False) -> bool:
         t = IDAUtils.get_type_info(stub.class_name)
         if t is None:
-            return True
+            return not must_exist
 
-        if IDAUtils.is_corrupted_type(t):
+        if IDAUtils.get_type_state(t) in (TypeState.BROKEN, TypeState.FORWARD):
             return False
 
         udt = ida_udt_type_data_t()
@@ -130,7 +130,7 @@ class VerifyUtils:
         return True
 
     @staticmethod
-    def verify_stl_structs(defs: STLTypeDefinitions) -> bool:
+    def verify_stl_structs(defs: STLTypeDefinitions, must_exist: bool = False) -> bool:
         """
         Verifies if there is a mismatch between the ClassGraph's
         STL structs and the imported type library structs.
@@ -141,11 +141,19 @@ class VerifyUtils:
         Returns:
             bool: True on success
         """
-        if not (VerifyUtils._stub_matches(defs.ptr) \
-                and VerifyUtils._stub_matches(defs.value)):
-            return False
+        return VerifyUtils._stub_matches(defs.ptr, must_exist) \
+            and VerifyUtils._stub_matches(defs.value, must_exist)
 
-        return True
+    @staticmethod
+    def bromaida_types_present(defs: STLTypeDefinitions) -> bool:
+        """True only if the sentinel types exist and are complete."""
+        return all(
+            IDAUtils.get_type_state(n) is TypeState.OK
+            for n in (
+                defs.ptr.class_name, defs.value.class_name,
+                "cocos2d::CCObject", "cocos2d::CCNode", "cocos2d::CCDirector"
+            )
+        )
 
     @staticmethod
     def verify_types_preimport(defs: STLTypeDefinitions) -> bool:
@@ -193,7 +201,7 @@ class VerifyUtils:
         Returns:
             bool: True on success
         """
-        if not VerifyUtils.verify_stl_structs(defs):
+        if not VerifyUtils.verify_stl_structs(defs, must_exist=True):
             ida_warning(
                 "Faulty STL struct found when checking imported types!\n\n"
                 "It is recommended to go to the 'Local Types' subview, "
@@ -204,7 +212,7 @@ class VerifyUtils:
             return False
 
         if any((
-            IDAUtils.is_corrupted_type(IDAUtils.get_type_info(t))
+            IDAUtils.get_type_state(t) is not TypeState.OK
             for t in (
                 "cocos2d::CCObject", "cocos2d::CCNode", "cocos2d::CCImage",
                 "cocos2d::CCApplication", "cocos2d::CCDirector"
@@ -372,7 +380,11 @@ class BIUtils:
         return index
 
     @staticmethod
-    def _params_match(arg_types: list["ida_tinfo_t | None"], binding: Binding) -> bool:
+    def _params_match(
+        arg_types: list["ida_tinfo_t | None"],
+        binding: Binding,
+        strict: bool = False
+    ) -> bool:
         if len(arg_types) != len(binding.parameters):
             return False
 
@@ -382,7 +394,14 @@ class BIUtils:
                 continue
 
             expected = IDAUtils.resolve_type_tinfo(param)
-            if expected is not None and not candidate.equals_to(expected):
+            if expected is None:
+                continue
+
+            matches = (
+                IDAUtils.same_declared_type(candidate, expected) if strict
+                else candidate.equals_to(expected)
+            )
+            if not matches:
                 return False
 
         return True
@@ -404,7 +423,10 @@ class BIUtils:
             bool: True if mismatch exists between either the
                 return type or the parameters.
         """
-        needs_retptr = False
+        needs_retptr: bool = False
+        # TODO: populate these from Broma with a potential explicit 'nontrivial' attribute
+        known_nontrivials: set[str] = {"cocos2d::CCPoint", "cocos2d::CCSize"}
+
         if function is None:
             return True
 
@@ -412,21 +434,24 @@ class BIUtils:
         if is_ellipsis_cc != binding.is_variadic:
             return True
 
-        # do not check against TodoReturn placeholders
         expected_rettype = function.rettype
-        if not binding.ida_rettype.type == "TodoReturn":
+        funcargs = list(function)
+        if binding.ida_rettype.is_unknown:
+            # keep IDA's own return type, and ignore a retptr it already has
+            funcargs = [a for a in funcargs if not (a.flags & FAI_RETPTR)]
+        else:
             resolved_ret = IDAUtils.resolve_type_tinfo(binding.ida_rettype)
-            needs_retptr = resolved_ret is not None and resolved_ret.is_udt()
+            needs_retptr = IDAUtils.needs_retptr(binding.ida_rettype, resolved_ret, known_nontrivials)
 
             expected_rettype = resolved_ret
             if needs_retptr:
                 expected_rettype = ida_tinfo_t()
                 expected_rettype.create_ptr(resolved_ret)
 
-            if expected_rettype is not None and not function.rettype.equals_to(expected_rettype):
+            if expected_rettype is not None and \
+                    not IDAUtils.same_declared_type(function.rettype, expected_rettype):
                 return True
 
-        funcargs = list(function)
         itanium_abi = IDAUtils.get_platform() != "win"
 
         if needs_retptr and itanium_abi:
@@ -435,7 +460,7 @@ class BIUtils:
                 return True
             funcargs = funcargs[1:]
 
-        # check if there's a 'ClassName* this' argument would be passed to the function
+        # check if a 'ClassName* this' argument would be passed to the function
         if binding.class_name != "" and not binding.is_static:
             if not funcargs:
                 return True
@@ -458,7 +483,7 @@ class BIUtils:
             funcargs = funcargs[1:]
 
         arg_types = [arg.type for arg in funcargs]
-        if not BIUtils._params_match(arg_types, binding):
+        if not BIUtils._params_match(arg_types, binding, strict=True):
             return True
 
         for ida_arg, param in zip(funcargs, binding.parameters):
@@ -534,8 +559,8 @@ class BIUtils:
             ea,
             binding.ida_rettype,
             binding.parameters,
-            binding.is_static,
-            binding.is_variadic,
+            is_static=binding.is_static,
+            is_variadic=binding.is_variadic,
             class_name=binding.class_name
         )
 
@@ -560,7 +585,7 @@ class BromaImporter:
     duplicates: dict[int, list[Binding]] = {}
 
     # TODO: this and the is_function_present method should just find their own way
-    # to relate to their binary instead of being handled by BromaIDA
+    # to relate to their binary based on data from Broma instead of being handled by BromaIDA
     def _is_class_present(
         self,
         class_name: str,
@@ -906,16 +931,28 @@ class BromaImporter:
             if not DataManager().get("disable_input_hash_check"):
                 input_hashes = self._get_input_file_hashes()
                 # replaced last_broma_info for better target platform support
+                # TODO: rework hash system to be a tied state to the IDB
                 last_import_hashes: dict[str, str] = DataManager().get("last_import_file_hashes", {})
 
                 if last_import_hashes.get(self._target_platform) == input_hashes:
-                    SimplePopup(
-                        "Detected same Broma input file hashes.\n"
-                        "Type import will be skipped.\n\n"
-                        "You can disable this check in 'Settings'.",
-                        "OK"
-                    ).show()
-                    import_types = False
+                    if VerifyUtils.bromaida_types_present(self._graph.stl_type_definitions):
+                        print(
+                            "[-] BromaImporter: Detected same Broma input file hashes from last import."
+                        )
+                        SimplePopup(
+                            "Detected same Broma input file hashes.\n"
+                            "Type import will be skipped.\n\n"
+                            "You can disable this check in 'Settings'.",
+                            "OK"
+                        ).show()
+                        import_types = False
+                        self.has_types = True
+                    else:
+                        print(
+                            "[!] BromaImporter: Broma input file hashes match "
+                            "but BromaIDA's types are missing from this IDB "
+                            "(reverted snapshot?). Re-importing."
+                        )
             else:
                 print(
                     "[-] BromaImporter: Broma input files hash check disabled. "
@@ -951,13 +988,9 @@ class BromaImporter:
                         "Broma classes."
                     )
                 else:
-                    self.has_types = len(IDAUtils.get_dirtree_entries(
-                        DIRTREE_LOCAL_TYPES, "/BromaIDA"
-                    )) != 0
+                    self.has_types = VerifyUtils.bromaida_types_present(self._graph.stl_type_definitions)
             else:
-                self.has_types = len(IDAUtils.get_dirtree_entries(
-                    DIRTREE_LOCAL_TYPES, "/BromaIDA"
-                )) != 0
+                self.has_types = VerifyUtils.bromaida_types_present(self._graph.stl_type_definitions)
 
             if self.has_types:
                 self._post_import_types()
@@ -975,7 +1008,7 @@ class BromaImporter:
     @staticmethod
     def safe_rename_function(ea: int, ida_name: str, name: str):
         """
-        Ensures user consent and current function name
+        Ensures user consent and checks if current function name
         is generic before renaming a function.
         """
         if ida_name.startswith("sub_"):
@@ -999,8 +1032,8 @@ class BromaImporter:
 
     def import_types(self) -> bool:
         """
-        Import types into IDA using
-        BromaCodegen and the Clang parser.
+        Import types into IDA using BromaCodegen and the
+        Clang parser.
 
         Returns:
             bool: Value that VerifyUtils.verify_types_postimport
@@ -1095,7 +1128,7 @@ class BromaImporter:
             if ida_func is None:
                 print(
                     f"[!] BromaImporter: Couldn't retrieve function at "
-                    f"{hex(ida_ea)}! ({binding.qualified_name})"
+                    f"{hex(ida_ea)}! (Function: {binding.qualified_name})"
                 )
                 continue
 
@@ -1186,6 +1219,7 @@ class BromaImporter:
                     continue
 
                 # joke's on you i've already finished the correcting
+                # but at least it doesn't log extra on every reimport
                 print(
                     "[!] BromaImporter: Mismatch or new data "
                     "in merged function list "
@@ -1246,8 +1280,10 @@ class BromaImporter:
                 matched = BIUtils.resolve_overload(binding, candidates)
                 if not matched:
                     print(
-                        "[!] BromaImporter: Couldn't disambiguate an "
-                        f"overload for '{binding.qualified_name}'! Skipping."
+                        "[!] BromaImporter: Couldn't disambiguate an overload for "
+                        f"'{binding.ida_rettype} {binding.qualified_name}"
+                        f"({binding.get_args_str(include_arg_names=False)})'! "
+                        "Skipping."
                     )
                     continue
 
@@ -1286,6 +1322,7 @@ class BromaImporter:
         self._imported_types = []
         self._broma_files = {}
 
+        IDAUtils.resolve_type_tinfo.cache_clear()
         self.has_types = False
         self.bindings = deque()
         self.linked_bindings = []
