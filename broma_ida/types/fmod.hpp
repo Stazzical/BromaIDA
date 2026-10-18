@@ -13,7 +13,11 @@
 
 // TODO: add the other structs, instead of just keeping them as a typedef
 
+#ifdef BROMAIDA_PLATFORM_WINDOWS
 #define F_API __stdcall
+#else
+#define F_API
+#endif
 #define F_CALL F_API
 #define F_CALLBACK F_CALL
 

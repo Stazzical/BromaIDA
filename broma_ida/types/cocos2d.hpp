@@ -2697,7 +2697,7 @@ namespace cocos2d
 
 		virtual void rightKeyUp() {}
 
-		virtual void scrollWheel(float x, float y) {}
+		virtual bool scrollWheel(float x, float y) { return false; }
 	};
 
 	class CCScriptHandlerEntry : public CCObject

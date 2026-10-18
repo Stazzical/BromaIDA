@@ -876,7 +876,7 @@ class BromaImporter:
 
         # direntry_t is unhashable so we manually deduplicate
         for _, path in new_types:
-            if path not in old_types_paths:
+            if path not in old_types_paths and path != "/BromaIDA":
                 self._imported_types.append((_, path))
 
         IDAUtils.chdir_dirtree_entries(

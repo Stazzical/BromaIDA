@@ -210,6 +210,9 @@ class STLUtils:
         const = "const" if stl_t.startswith("const ") else ""
         if const:
             stl_t = stl_t[len("const "):].lstrip()
+        elif stl_t.endswith(" const"):
+            const = "const"
+            stl_t = stl_t[:-len(" const")].rstrip()
 
         stripped = CppUtils.strip_crp(stl_t)
         if "std::" not in stl_t or stripped == "std::string":
