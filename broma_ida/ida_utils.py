@@ -295,8 +295,19 @@ class IDAUtils:
         if not HAS_IDACLANG:
             return "none"
 
-        # TODO: support new clang parser in IDA 9.2+
-        return "clang" if IDA_SDK_VERSION < 920 else "old_clang"
+        # prefer "clang", it's been the default parser since 9.2 and it takes
+        # the codegen'd header at full size without trouble, while the legacy
+        # "old_clang" one from idaclang doesn't handle it well
+        try:
+            import ida_srclang
+            if ida_srclang.select_parser_by_name("clang"):
+                return "clang"
+            if ida_srclang.select_parser_by_name("old_clang"):
+                return "old_clang"
+        except ModuleNotFoundError:
+            pass
+
+        return "clang"
 
     @staticmethod
     @cache
