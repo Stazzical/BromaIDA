@@ -42,34 +42,24 @@ class ClassBuilder:
             has_left_functions = True
 
         for field in self._broma_class.fields:
-            member_field = field.getAsMemberField()
-            pad_field = field.getAsPadField()
+            if field.for_platform(self._target_platform) is None:
+                continue
 
-            if member_field is not None:
-                if not str(self._target_platform) in member_field.platform:
+            if (member := field.getAsMemberField()) is not None:
+                line = self._member_line(member)
+            elif (pad := field.getAsPadField()) is not None:
+                amount = pad.amount.for_platform(self._target_platform)
+                if not amount:
                     continue
 
-                if has_left_functions:
-                    body += "\n"
-                    has_left_functions = False
+                line = f"PAD(0x{amount:x});"
+            else:
+                continue
 
-                body += f"""\t{
-                    CppUtils.normalize_type(
-                        member_field.type.name
-                    ).replace("geode::", "")
-                } {member_field.name};\n"""
-
-            elif pad_field is not None:
-                pad_amount = pad_field.amount.for_platform(self._target_platform)
-
-                if pad_amount is None or pad_amount == 0:
-                    continue
-
-                if has_left_functions:
-                    body += "\n"
-                    has_left_functions = False
-
-                body += f"\tPAD(0x{pad_amount:x});\n"
+            if has_left_functions:
+                body += "\n"
+                has_left_functions = False
+            body += f"\t{line}\n"
 
         bases = ", ".join(
             f"public {cls}" for cls in self._broma_class.superclasses
@@ -114,3 +104,8 @@ class ClassBuilder:
 
     def get_str(self) -> str:
         return self._class_str
+
+    @staticmethod
+    def _member_line(m) -> str:
+        t = CppUtils.normalize_type(m.type.name).replace("geode::", "")
+        return f"{t} {m.name}{f'[{m.count}]' if m.count else ''};"

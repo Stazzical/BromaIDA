@@ -138,9 +138,9 @@ class BromaCodegen:
 
             # Set up ready-made definitions for the header parser
             # _copy_content also populates _defined_classes from these files
-            enums = (self._broma_path / "../include/Geode/Enums.hpp").resolve().as_posix()
-            f.write(f'// Enums (dynamically included from "{enums}")\n')
-            self._copy_content(f, enums, "enums_only", True)
+            enums = (self._broma_path.parent / "include/Geode/Enums.hpp").resolve().as_posix()
+            f.write("// Geode/Enums.hpp\n")
+            self._copy_content(f, enums, "enums_only", no_header_comment=True)
             f.flush()
 
             # headers for these two can be found as part of Geode SDK

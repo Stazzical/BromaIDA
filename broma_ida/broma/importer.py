@@ -1,8 +1,8 @@
 from collections import deque, defaultdict
-from functools import cache
 from re import sub, match
 from pathlib import Path
-from hashlib import file_digest
+from hashlib import sha256
+from os import PathLike
 
 from ida_funcs import (
     get_func, add_func,
@@ -30,7 +30,10 @@ from ida_nalt import (
     get_imagebase, get_root_filename
 )
 
-from pybroma import Root, Class, FunctionBindField
+from pybroma import (
+    Root, Class, BromaParseError,
+    FunctionBindField
+)
 
 from broma_ida.broma.argtype import ArgType
 from broma_ida.broma.constants import BROMA_PLATFORMS, IDACallingConvention
@@ -47,6 +50,7 @@ from broma_ida.ida_utils import (
 )
 
 from broma_ida.data.data_manager import DataManager
+from broma_ida.data.idb_state import IDBState
 
 from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.directory_input_form import DirectoryInputForm
@@ -571,12 +575,12 @@ class BromaImporter:
     """Broma importer of all time using PyBroma now!"""
 
     _target_platform: BROMA_PLATFORMS
-    _bromas_path: Path
+    _entry_path: Path
     _headers_path: Path
     _imported_types: list[DirtreeEntry] = []
-    _broma_files: dict[str, Root] = {}
     _graph: ClassGraph
     _codegen: BromaCodegen
+    _state: IDBState
 
     has_types: bool = False
     bindings: deque[Binding] = deque()
@@ -667,56 +671,25 @@ class BromaImporter:
 
         return True
 
-    @cache
-    def _get_input_file_hashes(self) -> str:
-        """
-        Gets the hashes key of the input files.
+    def _compute_types_digest(self, header: Path) -> str:
+        h = sha256()
+        for part in (
+            header.read_bytes(),
+            IDAUtils.get_srclang_parser().encode(),
+            BIUtils.get_parser_argv(self._target_platform).encode(),
+        ):
+            h.update(len(part).to_bytes(8, "big"))
+            h.update(part)
+        return h.hexdigest()
 
-        Returns:
-            str: Hash of each Broma input file joined by ','.
-        """
-        hash: str = ""
-
-        for bfile in self._broma_files.keys():
-            with open(self._bromas_path / bfile, "rb", buffering = 0) as f:
-                hash += file_digest(f, "sha256").hexdigest() + ","
-
-        return hash[:-1]
-
-    def _preload_broma_files(self) -> None:
-        """
-        Pre-loads all the Broma files needed for importing
-        Geometry Dash's classes and bindings, relative to
-        the current binary's target platform.
-        """
-        # TODO: revert back to single-file import,
-        # that's more manageable in the long term
-        # than hand-writing these names that wouldn't
-        # work for anything other than what they're
-        # targetting anyway, i.e. GD 2.2081 here.
-        bfiles = [
-            "Cocos2d.bro",
-            # this only references GeometryDash types by-pointer,
-            # but it's not vice-versa for GeometryDash.bro
-            "Extras.bro",
-            "FMOD.bro",
-            "GeometryDash.bro",
-            "Kazmath.bro"
-        ]
-
-        for bfile in bfiles:
-            bro_path = self._bromas_path / bfile
-            if not bro_path.exists():
-                # TODO: think if we could make use of prompt_invalid_dir from BIUtils
-                # to receive a new directory if import fails.
-                ida_warning(
-                    f"Broma file '{bfile}' not found during pre-load!\n"
-                    "No bindings (or types) were imported."
-                )
-                stop()
-
-            # TODO: error check for this
-            self._broma_files[bfile] = Root(str(bro_path))
+    def _load_root(self) -> None:
+        try:
+            self._root = Root(str(self._entry_path))
+        except BromaParseError as e:
+            shown = "\n".join(e.messages[:5])
+            more = f"\n... and {len(e.messages) - 5} more" if len(e.messages) > 5 else ""
+            ida_warning(f"Couldn't parse '{self._entry_path.name}':\n\n{shown}{more}")
+            stop()
 
     def _load_broma_classes(self) -> None:
         """
@@ -725,33 +698,21 @@ class BromaImporter:
         Ignores classes with the missing attribute
         for the current target platform.
         """
-        for _, root in self._broma_files.items():
-            for cls in root.classes:
-                if self._target_platform in cls.attrs.missing:
-                    continue
-
-                if cls.name in self.classes:
-                    print(
-                        "[!] BromaImporter: Duplicate class definition! "
-                        f"({cls.name} from {cls.source})"
-                    )
-
-                if len(cls.fields) == 0:
-                    print(
-                        "[-] BromaImporter: Found empty class definition: "
-                        f"({cls.name} from {cls.source})"
-                    )
-
-                self.classes[cls.name] = cls
-
-    def _load_broma_bindings(self) -> None:
-        """Gather all the needed bindings from the Broma files."""
         current_binary = get_root_filename()
 
-        for class_name, broma_class in self.classes.items():
+        for broma_class in self._root.classes:
+            if self._target_platform in broma_class.attrs.missing:
+                continue
+
             class_present = self._is_class_present(
-                class_name, current_binary, Path(broma_class.source).name
+                broma_class.name, current_binary, Path(broma_class.source).name
             )
+
+            if len(broma_class.fields) == 0:
+                print(
+                    "[-] BromaImporter: Found empty class definition: "
+                    f"({broma_class.name} from {broma_class.source})"
+                )
 
             for field in broma_class.fields:
                 function_field = field.getAsFunctionBindField()
@@ -761,38 +722,48 @@ class BromaImporter:
                 proto = function_field.prototype
 
                 if class_present:
-                    func_addr = getattr(
-                        function_field.binds, self._target_platform, -1
+                    func_addr = Binding.raw_addr(
+                        function_field.binds,
+                        str(self._target_platform)
                     )
 
                     # -2 is explicitly inlined, -1 is missing/unbound
                     if func_addr not in (-1, -2):
                         self._add_binding(
-                            class_name, function_field, func_addr
+                            broma_class.name, function_field, func_addr
                         )
 
                 if self._target_platform in proto.attrs.links and \
                         self._target_platform not in proto.attrs.missing:
                     self.linked_bindings.append(
-                        Binding.from_field(class_name, function_field)
+                        Binding.from_field(broma_class.name, function_field)
                     )
 
-        for bfile in self._broma_files.values():
-            for func in bfile.functions:
-                # check for missing attribute was moved to
-                # import_into_idb for logging purposes
-                proto = func.prototype
+            self.classes[broma_class.name] = broma_class
 
-                if self._is_function_present(
-                    proto.name, current_binary, func.source
-                ):
-                    raw_addr = getattr(func.binds, self._target_platform, -1)
-                    if raw_addr not in (-1, -2):
-                        self.bindings.append(Binding.from_freefunc(func))
+    def _load_broma_bindings(self) -> None:
+        """Gather all the needed bindings from the Broma AST."""
+        current_binary = get_root_filename()
 
-                if self._target_platform in proto.attrs.links and \
-                        self._target_platform not in proto.attrs.missing:
-                    self.linked_bindings.append(Binding.from_freefunc(func))
+        for func in self._root.functions:
+            # check for missing attribute was moved to
+            # import_into_idb for logging purposes
+            proto = func.prototype
+
+            if self._is_function_present(
+                proto.name, current_binary, func.source
+            ):
+                raw_addr = Binding.raw_addr(
+                    func.binds,
+                    str(self._target_platform)
+                )
+
+                if raw_addr not in (-1, -2):
+                    self.bindings.append(Binding.from_freefunc(func))
+
+            if self._target_platform in proto.attrs.links and \
+                    self._target_platform not in proto.attrs.missing:
+                self.linked_bindings.append(Binding.from_freefunc(func))
 
     def _add_binding(
         self,
@@ -883,7 +854,12 @@ class BromaImporter:
             DIRTREE_LOCAL_TYPES, "/BromaIDA", self._imported_types
         )
 
-    def __init__(self, platform: BROMA_PLATFORMS, hdrpath: Path, bpath: Path):
+    def __init__(
+        self,
+        platform: BROMA_PLATFORMS,
+        hdrpath: str | PathLike[str],
+        bpath: str | PathLike[str]
+    ):
         """
         Initializes a BromaImporter instance.
 
@@ -896,10 +872,10 @@ class BromaImporter:
         """
         self._reset()
         self._target_platform = platform
-        self._headers_path = hdrpath
-        self._bromas_path = bpath
+        self._headers_path = Path(hdrpath)
+        self._entry_path = Path(bpath)
 
-        self._preload_broma_files()
+        self._load_root()
         self._load_broma_classes()
         self._graph = ClassGraph(self.classes)
         self._codegen = BromaCodegen(
@@ -907,8 +883,9 @@ class BromaImporter:
             self.classes,
             self._graph,
             self._headers_path,
-            self._bromas_path
+            self._entry_path.parent
         )
+        self._state = IDBState()
 
     def parse_bromas(self) -> None:
         """
@@ -917,6 +894,8 @@ class BromaImporter:
         Codegen if importing types is enabled in settings.
         """
         import_types: bool = DataManager().get("import_types")
+        types_file: Path | None = None
+        types_digest = ""
 
         if not HAS_IDACLANG and import_types:
             ida_warning(
@@ -928,19 +907,16 @@ class BromaImporter:
 
         if import_types:
             # Hash check for bindings
-            if not DataManager().get("disable_input_hash_check"):
-                input_hashes = self._get_input_file_hashes()
-                # replaced last_broma_info for better target platform support
-                # TODO: rework hash system to be a tied state to the IDB
-                last_import_hashes: dict[str, str] = DataManager().get("last_import_file_hashes", {})
+            # generate the header first and compute its digest for checking
+            types_file = self._codegen.write()
+            types_digest = self._compute_types_digest(types_file)
 
-                if last_import_hashes.get(self._target_platform) == input_hashes:
+            if not DataManager().get("disable_input_hash_check"):
+                if self._state.get("types.digest") == types_digest:
                     if VerifyUtils.bromaida_types_present(self._graph.stl_type_definitions):
-                        print(
-                            "[-] BromaImporter: Detected same Broma input file hashes from last import."
-                        )
+                        print("[-] BromaImporter: Types digest matches the last import.")
                         SimplePopup(
-                            "Detected same Broma input file hashes.\n"
+                            "Detected no changes since the last type import.\n"
                             "Type import will be skipped.\n\n"
                             "You can disable this check in 'Settings'.",
                             "OK"
@@ -949,13 +925,12 @@ class BromaImporter:
                         self.has_types = True
                     else:
                         print(
-                            "[!] BromaImporter: Broma input file hashes match "
-                            "but BromaIDA's types are missing from this IDB "
-                            "(reverted snapshot?). Re-importing."
+                            "[!] BromaImporter: Types digest matches but BromaIDA's types "
+                            "are missing from this IDB (reverted snapshot?). Re-importing."
                         )
             else:
                 print(
-                    "[-] BromaImporter: Broma input files hash check disabled. "
+                    "[-] BromaImporter: Hash check disabled. "
                     "Proceeding with type import."
                 )
 
@@ -973,14 +948,14 @@ class BromaImporter:
                 elif type_prompt == ASKBTN_BTN3:
                     DataManager().set("import_types", False)
                     print("[-] BromaImporter: Types import cancelled and disabled by user.")
-                else:
-                    self.has_types = self.import_types()
+                elif types_file is not None:
+                    self.has_types = self.import_types(types_file)
+                    IDAUtils.resolve_type_tinfo.cache_clear()
 
                 if self.has_types:
-                    dm = DataManager()
-                    saved_hashes = dm.get("last_import_file_hashes", {})
-                    saved_hashes[self._target_platform] = self._get_input_file_hashes()
-                    dm.set("last_import_file_hashes", saved_hashes)
+                    # only save after the import verified successfully
+                    self._state.set("types.digest", types_digest)
+                    self._state.set("types.platform", self._target_platform)
 
                     print(
                         f"\n\n[+] BromaImporter: Successfully "
@@ -988,9 +963,13 @@ class BromaImporter:
                         "Broma classes."
                     )
                 else:
-                    self.has_types = VerifyUtils.bromaida_types_present(self._graph.stl_type_definitions)
+                    self.has_types = VerifyUtils.bromaida_types_present(
+                        self._graph.stl_type_definitions
+                    )
             else:
-                self.has_types = VerifyUtils.bromaida_types_present(self._graph.stl_type_definitions)
+                self.has_types = VerifyUtils.bromaida_types_present(
+                    self._graph.stl_type_definitions
+                )
 
             if self.has_types:
                 self._post_import_types()
@@ -1001,8 +980,8 @@ class BromaImporter:
             f"\n\n[+] BromaImporter: Read {len(self.bindings)} "
             f"{IDAUtils.get_platform_printable()} bindings, "
             f"{len(self.duplicates)} duplicates "
-            f"and {len(self._broma_files)} Broma files "
-            f"from {str(self._bromas_path)}"
+            f"and {len(self._root.sources)} Broma files "
+            f"from {str(self._entry_path)}"
         )
 
     @staticmethod
@@ -1030,7 +1009,7 @@ class BromaImporter:
                     name
                 )
 
-    def import_types(self) -> bool:
+    def import_types(self, types_file: Path) -> bool:
         """
         Import types into IDA using BromaCodegen and the
         Clang parser.
@@ -1039,7 +1018,6 @@ class BromaImporter:
             bool: Value that VerifyUtils.verify_types_postimport
                 returns to check if type import succeeded.
         """
-        types_file = self._codegen.write()
         srclang_parser = IDAUtils.get_srclang_parser()
         select_srclang_parser_by_name(srclang_parser)
 
@@ -1262,8 +1240,9 @@ class BromaImporter:
         if not self.has_types:
             if total_linked:
                 print(
-                    f"[-] BromaImporter: Skipping {total_linked} linked "
-                    "binding(s) - no types were imported to check/apply against."
+                    f"[-] BromaImporter: Skipping resolution for "
+                    f"{total_linked} linked binding(s). "
+                    "Types must be imported to apply type information."
                 )
             return
 
@@ -1302,7 +1281,7 @@ class BromaImporter:
                             print(
                                 "[!] BromaImporter: Failed to fix function "
                                 f"signature for '{binding.qualified_name}' "
-                                "(linked)!"
+                                "(linked symbol)!"
                             )
 
         print(
@@ -1318,9 +1297,8 @@ class BromaImporter:
         """
         self._target_platform = ""  # type: ignore
         self._headers_path = Path()
-        self._bromas_path = Path()
+        self._entry_path = Path()
         self._imported_types = []
-        self._broma_files = {}
 
         IDAUtils.resolve_type_tinfo.cache_clear()
         self.has_types = False

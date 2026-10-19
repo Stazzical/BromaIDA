@@ -66,19 +66,13 @@ def on_import(form: MainForm, code: int = 0):
 
     platform = IDAUtils.get_platform()
 
-    # do NOT add a colon at the end, they're special characters in forms
-    dir_form = DirectoryInputForm("Select folder containing .bro files")
-    ok = dir_form.show()
-
-    if ok != 1:
+    entry = ask_file(False, "*.bro", "Select the Broma entry file")
+    if not path_exists(entry, ".bro"):
+        SimplePopup("Please select a valid .bro file!", "OK").show()
         stop()
 
-    bromas_dir = str(dir_form.saved_controls.iDir)
-
     broma_importer = BromaImporter(
-        platform,
-        Path(__file__).resolve().parent / "broma_ida" / "types",
-        Path(bromas_dir)
+        platform, Path(__file__).resolve().parent / "broma_ida" / "types", Path(entry)
     )
     broma_importer.parse_bromas()
     broma_importer.import_into_idb()

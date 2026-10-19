@@ -5,7 +5,8 @@ from ida_name import is_visible_cp
 
 from pybroma import (
     FunctionProto, MemberFunctionProto,
-    FunctionBindField, Function
+    FunctionBindField, Function,
+    OffsetStatus
 )
 
 from broma_ida.broma.argtype import ArgType, RetType
@@ -39,24 +40,11 @@ class FunctionSignature:
     is_variadic: bool = False
 
     @staticmethod
-    def _check_if_variadic(proto: FunctionProto | MemberFunctionProto) -> bool:
-        """
-        Whether `proto` (a Broma FunctionProto/MemberFunctionProto) is
-        variadic. Prefers the explicit `is_variadic` AST field on newer
-        PyBroma or falls back to detecting a literal `...` type
-        for older versions.
-
-        Args:
-            proto (FunctionProto | MemberFunctionProto)
-
-        Returns:
-            bool
-        """
-        if getattr(proto, "is_variadic", False):
-            return True
-
-        # fallback compatibility
-        return any(arg_t.name == "..." for _, arg_t in proto.args)
+    def raw_addr(binds, platform: str) -> int:
+        status = binds.status_for(platform)
+        if status == OffsetStatus.Bound:
+            return binds.for_platform(platform)
+        return -2 if status == OffsetStatus.Inlined else -1
 
     @staticmethod
     def _extract_common(f: FunctionBindField | Function) -> dict:
@@ -76,7 +64,7 @@ class FunctionSignature:
         # or missing on the target platform
 
         # -2 is explicitly inlined, -1 is not found
-        raw_addr = getattr(f.binds, platform, -1)
+        raw_addr = FunctionSignature.raw_addr(f.binds, platform)
 
         return {
             "name": proto.name,
@@ -86,38 +74,16 @@ class FunctionSignature:
                 for param_name, arg_t in proto.args
                 if arg_t.name != "..."  # variadic ellipsis gets removed here
             ],
-            "is_variadic": FunctionSignature._check_if_variadic(proto),
+            "is_variadic": getattr(proto, "is_variadic", False),
             "is_virtual": getattr(proto, "is_virtual", False),
             "is_static": getattr(proto, "is_static", False),
             "is_const": getattr(proto, "is_const", False),
             "is_inline": raw_addr == -2,
             "is_missing": platform in proto.attrs.missing,
+            "is_ctor": getattr(proto, "is_ctor", False),
+            "is_dtor": getattr(proto, "is_dtor", False),
             "_raw_addr": raw_addr,
         }
-
-    @staticmethod
-    def _check_ctor_dtor_ret(data: dict, class_name: str) -> dict:
-        """
-        Sets the is_ctor and is_dtor properties based
-        on the name of the function and whether it comes
-        from a class.
-
-        Args:
-            data (dict): The dict returned by `_extract_common`.
-            class_name (str)
-
-        Returns:
-            dict: The same dict, with `is_ctor` or `is_dtor`
-                property set if relevant.
-        """
-        if class_name != "":
-            last_class = class_name.split("::")[-1]
-            if data["name"] == last_class:
-                data["is_ctor"] = True
-            elif data["name"] == f"~{last_class}":
-                data["is_dtor"] = True
-
-        return data
 
     @classmethod
     def from_field(
@@ -139,7 +105,6 @@ class FunctionSignature:
         data = cls._extract_common(f)
         # FunctionSignature doesn't keep address, remove
         data.pop("_raw_addr")
-        data = cls._check_ctor_dtor_ret(data, class_name)
         return cls(class_name=class_name, **data)
 
     @cached_property
@@ -285,7 +250,6 @@ class Binding(FunctionSignature):
         """
         data = cls._extract_common(f)
         address = data.pop("_raw_addr")
-        data = cls._check_ctor_dtor_ret(data, class_name)
         return cls(class_name=class_name, address=address, **data)
 
     @classmethod
