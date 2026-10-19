@@ -25,11 +25,10 @@ Smartly processes the Broma files from the [Geometry Dash Geode bindings](https:
 
 ## Requirements
 
-- IDA Pro v7.0+ (v9.2 and v9.3 are fully tested)
-- IDAPython
+- IDA Pro v7.5+ (v9.2+ recommended)
 - Python v3.10.0+ (v3.12+ highly recommended)
 - Required for importing types:
-  - IDAClang
+  - IDAClang (IDA Pro v7.7+ required)
 
 ## Installation
 
