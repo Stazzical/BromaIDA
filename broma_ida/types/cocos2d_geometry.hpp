@@ -39,22 +39,16 @@ namespace cocos2d
 	{
 	public:
 		CCPoint origin;
-		CCSize size;
+		CCSize  size;
 	};
-
-	typedef struct _ccColor3B
-	{
-		GLubyte r;
-		GLubyte g;
-		GLubyte b;
-	} ccColor3B;
-
-	static const ccColor3B ccWHITE = { 255, 255, 255} ;
-	#define CCPointZero CCPointMake(0, 0)
 
 	#define CCPointMake(x, y) cocos2d::CCPoint((float)(x), (float)(y))
 	#define CCSizeMake(width, height) cocos2d::CCSize((float)(width), (float)(height))
 	#define CCRectMake(x, y, width, height) cocos2d::CCRect((float)(x), (float)(y), (float)(width), (float)(height))
+
+	#define CCPointZero CCPointMake(0,0)
+	#define CCSizeZero CCSizeMake(0,0)
+	#define CCRectZero CCRectMake(0,0,0,0)
 }
 
 #endif

@@ -357,29 +357,16 @@ typedef struct UT_hash_handle {
    unsigned hashv;                   /* result of hash-fcn(key)        */
 } UT_hash_handle;
 
-// not here because they are used extensively, and because they're used in stl_types.hpp
+// not here because they are used extensively (?)
 #include "cocos2d_geometry.hpp"
 
+// some idiot put this outside the cocos namespace
 enum ResolutionPolicy
 {
-	// The entire application is visible in the specified area without trying to preserve the original aspect ratio.
-	// Distortion can occur, and the application may appear stretched or compressed.
 	kResolutionExactFit,
-	// The entire application fills the specified area, without distortion but possibly with some cropping,
-	// while maintaining the original aspect ratio of the application.
 	kResolutionNoBorder,
-	// The entire application is visible in the specified area without distortion while maintaining the original
-	// aspect ratio of the application. Borders can appear on two sides of the application.
 	kResolutionShowAll,
-	// The application takes the height of the design resolution size and modifies the width of the internal
-	// canvas so that it fits the aspect ratio of the device
-	// no distortion will occur however you must make sure your application works on different
-	// aspect ratios
 	kResolutionFixedHeight,
-	// The application takes the width of the design resolution size and modifies the height of the internal
-	// canvas so that it fits the aspect ratio of the device
-	// no distortion will occur however you must make sure your application works on different
-	// aspect ratios
 	kResolutionFixedWidth,
 
 	kResolutionUnKnown,
@@ -513,7 +500,6 @@ namespace cocos2d
 		kCCTexture2DPixelFormat_PVRTC4,
 		//! 2-bit PVRTC-compressed texture: PVRTC2
 		kCCTexture2DPixelFormat_PVRTC2,
-
 
 		//! Default texture format: RGBA8888
 		kCCTexture2DPixelFormat_Default = kCCTexture2DPixelFormat_RGBA8888,
@@ -948,13 +934,29 @@ namespace cocos2d
 		GLuint wrapT;
 	} ccTexParams;
 
+	typedef struct _ccColor3B
+	{
+		GLubyte r;
+		GLubyte g;
+		GLubyte b;
+	} ccColor3B;
+
 	typedef struct _ccHSVValue
 	{
 		float h, s, v;
 		bool absoluteSaturation;
 		bool absoluteBrightness;
-		private: unsigned char __pad[2];
 	} ccHSVValue;
+
+	static const ccColor3B ccWHITE={255,255,255};
+	static const ccColor3B ccYELLOW={255,255,0};
+	static const ccColor3B ccBLUE={0,0,255};
+	static const ccColor3B ccGREEN={0,255,0};
+	static const ccColor3B ccRED={255,0,0};
+	static const ccColor3B ccMAGENTA={255,0,255};
+	static const ccColor3B ccBLACK={0,0,0};
+	static const ccColor3B ccORANGE={255,127,0};
+	static const ccColor3B ccGRAY={166,166,166};
 
 	typedef struct _ccColor4F {
 		GLfloat r;
