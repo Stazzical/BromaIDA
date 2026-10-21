@@ -10,6 +10,7 @@ from broma_ida.metadata import __version__, PLUGIN_NAME
 from broma_ida.broma.class_graph import ClassGraph
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.class_builder.class_builder import ClassBuilder
+from broma_ida.utils import CppUtils
 
 from ida_nalt import get_root_filename
 
@@ -56,17 +57,10 @@ class BromaCodegen:
         self._defined_classes.add(cls.name)
 
     @staticmethod
-    def _build_fwd_decl(name: str):
-        if "::" in name:
-            parts = name.split("::")
-            bare = parts[-1]
-            open_ns = " ".join(
-                f"namespace {ns} {{" for ns in parts[:-1]
-            )
-            close_ns = (" }" * (len(parts) - 1))[1:]
-            return f"{open_ns} class {bare}; {close_ns}\n"
-
-        return f"class {name};\n"
+    def _build_fwd_decl(name: str) -> str:
+        namespaces, bare = CppUtils.split_qualified(name)
+        fwddec = CppUtils.wrap_namespaces(namespaces, f"class {bare};", inline=True)
+        return f"{fwddec}\n"
 
     def __init__(
         self,

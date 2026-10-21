@@ -124,6 +124,29 @@ class CppUtils:
         return args
 
     @staticmethod
+    def split_qualified(name: str) -> tuple[list[str], str]:
+        """
+        Splits a qualified C++ method name.
+
+        Returns:
+            tuple[list[str], str]:
+                'a::b::C' -> (['a', 'b'], 'C')
+        """
+        *namespaces, bare = name.split("::")
+        return namespaces, bare
+
+    @staticmethod
+    def wrap_namespaces(namespaces: list[str], body: str, inline: bool = False) -> str:
+        """Wraps `body` in nested namespaces."""
+        if not namespaces:
+            return f"{body}"
+
+        opening = " ".join(f"namespace {ns} {{" for ns in namespaces)
+        closing = " ".join("}" for _ in namespaces)
+        sep = " " if inline else "\n"
+        return f"{opening}{sep}{body}{sep}{closing}"
+
+    @staticmethod
     def looks_malformed(raw: str) -> bool:
         """Checks if there are incorrect patterns in the demangle."""
         # i don't know if this is actually needed, but some demangles in IDA looked wrong

@@ -27,7 +27,6 @@ from broma_ida.data.data_manager import DataManager
 
 from broma_ida.ui.simple_popup import SimplePopup
 from broma_ida.ui.main_form import MainForm
-from broma_ida.ui.directory_input_form import DirectoryInputForm
 
 from pybroma import __version__ as pybroma_version
 

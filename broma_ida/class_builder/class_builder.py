@@ -13,16 +13,11 @@ class ClassBuilder:
 
     _class_str: str
 
-    def _import_class(self):
-        """
-        Converts a Broma class to a C++ class
-        declaration string for the IDA parser.
-        """
-        body = ""
-        has_left_functions = False
+    def _virtual_lines(self) -> list[str]:
+        lines: list[str] = []
 
         for sig in self._graph.get_own_virtuals(self._broma_class.name):
-            # supress any missing functions on the target platform.
+            # supress any missing functions on the target platform
             if sig.is_missing:
                 continue
 
@@ -38,55 +33,50 @@ class ClassBuilder:
             ):
                 continue
 
-            body += f"\t{str(sig)}\n"
-            has_left_functions = True
+            lines.append(f"\t{sig}")
+
+        return lines
+
+    def _field_lines(self) -> list[str]:
+        lines: list[str] = []
 
         for field in self._broma_class.fields:
             if field.for_platform(self._target_platform) is None:
                 continue
 
             if (member := field.getAsMemberField()) is not None:
-                line = self._member_line(member)
+                lines.append(f"\t{self._member_line(member)}")
             elif (pad := field.getAsPadField()) is not None:
                 amount = pad.amount.for_platform(self._target_platform)
-                if not amount:
-                    continue
 
-                line = f"PAD(0x{amount:x});"
-            else:
-                continue
+                if amount:
+                    lines.append(f"\tPAD(0x{amount:x});")
 
-            if has_left_functions:
-                body += "\n"
-                has_left_functions = False
-            body += f"\t{line}\n"
+        return lines
+
+    def _import_class(self):
+        """
+        Converts a Broma class to a C++ class
+        declaration string for the IDA parser.
+        """
+        virtuals = self._virtual_lines()
+        fields = self._field_lines()
+
+        # one blank line separates the virtuals from the fields
+        body_lines: list[str] = [*virtuals, *([""] if virtuals and fields else []), *fields]
 
         bases = ", ".join(
             f"public {cls}" for cls in self._broma_class.superclasses
         )
         inherit = f" : {bases}" if bases else ""
+        namespaces, bare = CppUtils.split_qualified(self._broma_class.name)
 
-        if "::" in self._broma_class.name:
-            parts = self._broma_class.name.split("::")
-            bare_name = parts[-1]
-            open_ns = " ".join(
-                f"namespace {ns} {{" for ns in parts[:-1]
-            )
-            close_ns = (" }" * (len(parts) - 1))[1:]
+        declaration = f"class {bare}{inherit} {{"
+        if body_lines:
+            declaration += "\npublic:\n" + "\n".join(body_lines) + "\n"
+        declaration += "};"
 
-            self._class_str = (
-                f"{open_ns}\n"
-                f"class {bare_name}{inherit} {{"
-                f"{'\npublic:\n' + body if body != '' else ''}"
-                "};\n"
-                f"{close_ns}\n\n"
-            )
-        else:
-            self._class_str = (
-                f"class {self._broma_class.name}{inherit} {{"
-                f"{'\npublic:\n' + body if body != '' else ''}"
-                "};\n\n"
-            )
+        self._class_str = CppUtils.wrap_namespaces(namespaces, declaration) + "\n\n"
 
     def __init__(
         self,
