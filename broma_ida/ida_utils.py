@@ -150,12 +150,17 @@ class IDAUtils:
             self.tree: ida_dirtree_t = get_std_dirtree(tree) \
                 if isinstance(tree, int) else tree
             self.failed_entries: list[DirtreeEntry] = []
+            self.matched_entries: list[DirtreeEntry] = []
             self.predicate = predicate
             self.callback = func
             self.path = Path(path)
             self.top = top
 
             self.tree.traverse(self)
+
+            for de, entry_path in self.matched_entries:
+                if not self.callback(de, entry_path):
+                    self.failed_entries.append((de, entry_path))
 
         def descendant_check(self, entry_path: str) -> bool:
             return bool(Path(entry_path).relative_to(self.path)) \
@@ -167,9 +172,8 @@ class IDAUtils:
 
                 if de.valid() and entry_path != self.path.as_posix() and \
                         self.descendant_check(entry_path) and \
-                        self.predicate(de, entry_path) and \
-                        not self.callback(de, entry_path):
-                    self.failed_entries.append((de, entry_path))
+                        self.predicate(de, entry_path):
+                    self.matched_entries.append((de, entry_path))
             except ValueError:
                 pass
 
@@ -295,8 +299,16 @@ class IDAUtils:
         if not HAS_IDACLANG:
             return "none"
 
-        # TODO: support new clang parser in IDA 9.2+
-        return "clang" if IDA_SDK_VERSION < 920 else "old_clang"
+        try:
+            import ida_srclang
+            if ida_srclang.select_parser_by_name("clang"):
+                return "clang"
+            if ida_srclang.select_parser_by_name("old_clang"):
+                return "old_clang"
+        except ModuleNotFoundError:
+            pass
+
+        return "clang"
 
     @staticmethod
     @cache
