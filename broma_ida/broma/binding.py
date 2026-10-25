@@ -167,9 +167,11 @@ class FunctionSignature:
         Gets a function's arguments signature string.
 
         Args:
-            include_this_arg (bool, optional): Include the `this` parameter.
+            include_this_arg (bool, optional):
+                Include the `this` parameter.
                 Defaults to False.
-            include_arg_names (bool, optional): Include parameter names.
+            include_arg_names (bool, optional):
+                Include parameter names.
                 Defaults to True.
 
         Returns:
@@ -178,13 +180,14 @@ class FunctionSignature:
         args = list(self.parameters)
 
         has_this_arg = (
-            len(args) > 0
+            not self.is_static
+            and len(args) > 0
             and args[0].type == f"{self.class_name}*"
         )
 
         if include_this_arg and not self.is_static:
             if not has_this_arg:
-                args.insert(0, ArgType(f"{self.class_name}*", "this"))
+                args.insert(0, ArgType.for_this(self.class_name))
         elif has_this_arg:
             args = args[1:]
 

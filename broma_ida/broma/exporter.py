@@ -1,15 +1,13 @@
 from typing import cast, Generator, Any
 from os import path
-
-from idc import get_type
-from idaapi import get_imagebase
-from ida_kernwin import ASKBTN_BTN1
-
-from re import search, match, sub, Match
+from re import search, match, sub, findall, Match
 from shutil import move
 
+from ida_nalt import get_imagebase
+from ida_kernwin import ASKBTN_BTN1
+
 from broma_ida.broma.constants import (
-    BROMA_PLATFORMS, CPP_TYPE_SPECIFIERS, CPP_TYPE_QUALIFIERS
+    BROMA_PLATFORMS
 )
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.argtype import ArgType, RetType
@@ -20,138 +18,10 @@ from broma_ida.data.data_manager import DataManager
 from broma_ida.ui.ask_popup import AskPopup
 
 
-class BEUtils:
-    """BromaExporter utilities"""
-
-    @staticmethod
-    def from_ida_args(ida_ea: int) -> list[ArgType]:
-        """Creates a list of ArgTypes of a function from an offset.
-
-        Args:
-            ea (int):
-
-        Returns:
-            list[ArgType]
-        """
-        func_info = IDAUtils.get_function_info(ida_ea, True)
-
-        # fallback to parsing function signature
-        if func_info is None:
-            sig: str = get_type(ida_ea)
-            args = sig[sig.index("(")+1:-1]
-
-            # just lie since get_type returns the "this"
-            # argument already included
-            return BEUtils.parse_str_args(args, "", True)
-
-        args = [
-            ArgType(str(arg.type), arg.name) for arg in func_info
-        ]
-
-        # remove return ptr (retstr) argument
-        if "std::" in str(func_info.rettype):
-            args = args[1:]
-
-        return args
-
-    @staticmethod
-    def parse_str_args(
-        args_str: str | Any,
-        class_name: str,
-        is_static: bool
-    ) -> list[ArgType]:
-        """Mini parser that converts a string of arguments
-        into a list of ArgTypes
-
-        Args:
-            args_str (str):
-            class_name (str):
-            is_static (bool):
-
-        Returns:
-            list[ArgType]
-        """
-        argstype_list: list[ArgType] = []
-
-        if not is_static:
-            argstype_list.append(ArgType(f"{class_name}*", "this"))
-
-        current_token: str = ""
-        nest_count = 0
-
-        for i, c in enumerate(args_str):
-            if c == "<":
-                nest_count += 1
-
-            if c == ">":
-                nest_count -= 1
-
-            if nest_count == 0 and \
-                    (c == "," or i == len(args_str) - 1):
-                if i == len(args_str) - 1:
-                    current_token += c
-
-                arg = current_token.lstrip()
-
-                parts = arg.split()
-                # parts with no specifiers nor qualifiers
-                # this isn't actually used to build the ArgType
-                parts_nosq = arg.split()
-
-                for x in CPP_TYPE_SPECIFIERS + CPP_TYPE_QUALIFIERS:
-                    if x in parts_nosq:
-                        parts_nosq.remove(x)
-
-                if "long" in parts_nosq:
-                    try:
-                        # replace "long long" with "long"
-                        if parts_nosq[parts_nosq.index("long") + 1] == "long":
-                            parts_nosq.pop(parts_nosq.index("long") + 1)
-                        # replace "long int" with "long"
-                        if parts_nosq[parts_nosq.index("long") + 1] == "int":
-                            parts_nosq.pop(parts_nosq.index("long") + 1)
-                    except ValueError:
-                        pass
-
-                if "short" in parts_nosq:
-                    try:
-                        # replace "short int" with "short"
-                        if parts_nosq[parts_nosq.index("short") + 1] == "int":
-                            parts_nosq.pop(parts_nosq.index("short") + 1)
-                    except ValueError:
-                        pass
-
-                arg_type: str
-                arg_name: str
-
-                if len(parts_nosq) > 1 and \
-                        not parts_nosq[-1].endswith("*") and \
-                        not parts_nosq[-1].endswith("&"):
-                    arg_type = " ".join(parts[:-1])
-                    arg_name = parts[-1]
-                else:
-                    arg_type = " ".join(parts)
-                    arg_name = f"p{len(argstype_list)}"
-
-                argstype_list.append(
-                    ArgType(arg_type, arg_name)
-                )
-
-                current_token = ""
-
-                continue
-
-            current_token += c
-
-        return argstype_list
-
-
+# TODO: Use pybroma.BromaWriter when it becomes good
 class BromaExporter:
     """
-    Broma exporter of all time using regex
-    (if you couldn't already tell)
-    (i think i should invest in a parser)
-    TODO: Use pybroma.BromaWriter when it becomes good
+    Broma exporter of all time using regex!
     """
 
     RX_CLASS = r"""class (\S+)"""
@@ -160,7 +30,7 @@ class BromaExporter:
     """
 
     RX_METHOD = \
-        r"""^(?:\t| {4})(?:\/\/ )?(virtual|callback|static|)(?: *)?(?:((?:const )?\S+) )?(\S+)\((.*)\)(?: const|)(?: = ((?=inline).* \{|(?!inline)(?:(?:win|imac|m1|ios) (?:0[xX][0-9a-fA-F]+|inline)(?:, )?)+))?"""  # noqa: E501
+        r"""^[ \t]*(virtual|callback|static|)(?: *)?(?:((?:const )?\S+) )?(\S+)\((.*)\)(?: const|)(?: = ((?=inline).* \{|(?!inline)(?:(?:win|imac|m1|ios) (?:0[xX][0-9a-fA-F]+|inline)(?:, )?)+))?"""  # noqa: E501
     """
     group 1: "virtual", "callback", "static", or empty
     group 2: return type, empty if ctor/dtor
@@ -168,6 +38,7 @@ class BromaExporter:
     group 4: comma-separated parameters or empty
     group 5: comma-separated platform address(es)
     """
+
     RX_METHOD_PLAT_ADDR_BASE = r"""{platform} (0[xX][0-9a-fA-F]+|inline)"""
     """
     group 1: binding address or "inline"
@@ -188,7 +59,8 @@ class BromaExporter:
     """Number of exported renamed function arguments' names"""
 
     def _make_plat_method_addr_regex(self, platform: BROMA_PLATFORMS) -> str:
-        """Makes a platform method address regex
+        """
+        Makes a platform method address regex
 
         Args:
             platform (BROMA_PLATFORMS): The platform
@@ -202,7 +74,8 @@ class BromaExporter:
         self,
         platforms: str | None
     ) -> dict[BROMA_PLATFORMS, int]:
-        """Parses "win 0x13be40, imac 0x586990, m1 inline" to
+        """
+        Parses "win 0x13be40, imac 0x586990, m1 inline" to
         { "win": 0x13be40, "imac": 0x586990, "m1": 0 }
 
         Args:
@@ -214,25 +87,72 @@ class BromaExporter:
         if platforms is None:
             return {}
 
-        platforms_list = [
-            f"""{plat.split(" ")[0]} 0x0"""
-            if plat.endswith("inline") else plat
-            for plat in platforms.split(", ")
-        ]
-
         return {
-            cast(BROMA_PLATFORMS, plat_inf[0]): int(plat_inf[1], 16)
-            for plat_inf in [
-                plat_addr_pair.split(" ") for plat_addr_pair in platforms_list
-            ]
+            cast(BROMA_PLATFORMS, plat): 0 if addr == "inline" else int(addr, 16)
+            for plat, addr in findall(r"(win|imac|m1|ios) (0[xX][0-9a-fA-F]+|inline)", platforms)
         }
+
+    @staticmethod
+    def _parse_broma_params(
+        func: Match[str], class_name: str
+    ) -> tuple[list[ArgType], bool]:
+        """
+        Read a Broma function signature and recreate standardized
+        information for use against IDA.
+        Adds the implicit `this` parameter to the parameters list.
+
+        Returns:
+            tuple[list[ArgType], bool]: (parameters, is_variadic)
+        """
+        is_static = func.group(1) == "static"
+
+        params, is_variadic = ArgType.parse_params(
+            func.group(4), first_index=0 if is_static else 1
+        )
+        if not is_static:
+            params.insert(0, ArgType.for_this(class_name))
+
+        return params, is_variadic
+
+    @staticmethod
+    def _find_overload(
+        group: list[Binding],
+        params: list[ArgType],
+        is_variadic: bool
+    ) -> int | None:
+        """
+        Index of the binding in `group` that belongs to a Broma line.
+        Overloads that differ only by '...' are told apart
+        by the flag first. If none agrees, any binding with
+        the same parameters will do, since an IDB that doesn't
+        mark a function variadic says nothing against Broma's '...'.
+
+        Args:
+            group (list[Binding]): List of Binding instances
+                of a function's overloads grouped together.
+            params (list[ArgType]): List of arguments to match
+                against and specify the overload.
+            is_variadic (bool): If the function overload is
+                variadic.
+
+        Returns:
+            int | None: Index of the specific function overload
+                inside `group` if found, or None.
+        """
+        same_params = [i for i, o in enumerate(group) if o.parameters == params]
+
+        return next(
+            (i for i in same_params if group[i].is_variadic == is_variadic),
+            same_params[0] if same_params else None
+        )
 
     def _get_broma_string(
         self,
         parsed_broma_line: Match[str],
         binding: Binding
     ) -> str:
-        """Gets the Broma line to export after adding the binding's address
+        """
+        Gets the Broma line to export after adding the binding's address
 
         Args:
             parsed_broma_line (Match[str]): Parsed Broma line in export()
@@ -244,8 +164,8 @@ class BromaExporter:
         """
         # some very freaky code below (it uses nonlocal), you have been warned
         # TODO: literally do anything else bruh please
-
         sub_repl: str
+        prefix = parsed_broma_line.string[:parsed_broma_line.start(1)]
 
         def sub_ret_type_f(m: Match[str]):
             nonlocal sub_repl
@@ -253,13 +173,13 @@ class BromaExporter:
             groups = m.groups()
 
             if groups[0] == "":
-                return "\t{} {}({}){addr}".replace(
+                return prefix + "{} {}({}){addr}".replace(
                     "{addr}", f" = {groups[4]}" if groups[4] else ""
                 ).format(
                     *(sub_repl, *groups[2:])
                 )
 
-            return "\t{} {} {}({}){addr}".replace(
+            return prefix + "{} {} {}({}){addr}".replace(
                 "{addr}", f" = {groups[4]}" if groups[4] else ""
             ).format(
                 *(groups[0], sub_repl, *groups[2:])
@@ -271,7 +191,7 @@ class BromaExporter:
             groups = m.groups()
 
             if groups[0] == "":
-                return "\t{ret}{}({}){addr}".replace(
+                return prefix + "{ret}{}({}){addr}".replace(
                     "{ret}", f"{groups[1]} " if groups[1] else ""
                 ).replace(
                     "{addr}", f" = {groups[4]}" if groups[4] else ""
@@ -279,7 +199,7 @@ class BromaExporter:
                     groups[2], sub_repl
                 )
 
-            return "\t{} {ret}{}({}){addr}".replace(
+            return prefix + "{} {ret}{}({}){addr}".replace(
                 "{ret}", f"{groups[1]} " if groups[1] else ""
             ).replace(
                 "{addr}", f" = {groups[4]}" if groups[4] else ""
@@ -290,16 +210,20 @@ class BromaExporter:
 
         self.num_exports += 1
 
+        # trust the Broma line over the IDB-derived guess
+        binding.is_static = parsed_broma_line.group(1) == "static"
+
+        broma_ret = parsed_broma_line.group(2)
+
         if DataManager().get("export_return_types") and (
-            binding.ret.name not in (
-                "TodoReturn", "", parsed_broma_line.group(2)
-            ) and
-            # not ctor or dtor
-            parsed_broma_line.group(2) is not None
+                # not ctor or dtor
+                broma_ret is not None
+                and not binding.ret.is_unknown
+                and binding.ret != RetType(broma_ret)
         ):
             self.num_ret_exports += 1
 
-            sub_repl = binding.ret.name
+            sub_repl = binding.ret.type
 
             new_line = sub(
                 self.RX_METHOD,
@@ -312,19 +236,24 @@ class BromaExporter:
             )  # type: ignore
 
         if DataManager().get("export_args_names"):
-            broma_args = BEUtils.parse_str_args(
-                parsed_broma_line.group(4),
-                binding.class_name,
-                binding.is_static
+            broma_args, broma_variadic = self._parse_broma_params(
+                parsed_broma_line, binding.class_name
             )
 
             # pX is Broma auto-generated name, aX is IDA auto-generated name
-            if any((
+            names_differ = any((
                 match(r"(p|a)([0-9]+)", p.name) is None and
                 p.name != broma_args[i].name
                 for i, p in enumerate(binding.parameters)
-            )):
+                if i > 0 or binding.is_static
+            ))
+            # be conservative about ellipsis, keep broma's ellipsis if it has one
+            adds_ellipsis = binding.is_variadic and not broma_variadic
+
+            if names_differ or adds_ellipsis:
                 self.num_args_names_exports += 1
+
+                binding.is_variadic |= broma_variadic
 
                 sub_repl = binding.get_args_str()
 
@@ -359,6 +288,16 @@ class BromaExporter:
 
         # binding has another platform's address associated to it
         if self._target_platform not in broma_binding_platforms:
+            # add this platform's address behind the `= inline;`
+            bare_inline = sub(
+                r"(=\s*)inline(\s*;)",
+                rf"\1{self._target_platform} {hex(binding.address)}, inline\2",
+                parsed_broma_line.string,
+                count=1
+            )
+            if bare_inline != parsed_broma_line.string:
+                return bare_inline
+
             return sub(
                 r"((?:(?:win|imac|m1|ios) (?:0[xX][0-9a-fA-F]+|inline)(?:, )?)+)",  # noqa: E501
                 rf"""{self._target_platform} {hex(binding.address)}, \1""",
@@ -396,21 +335,27 @@ class BromaExporter:
 
     def __init__(self, platform: BROMA_PLATFORMS, file: str):
         self._reset()
+
         self._target_platform = platform
         self._filepath = file
 
     def push_binding(self, binding: Binding):
-        """Adds a binding to be exported
+        """
+        Adds a binding to be exported
 
         Args:
             binding (Binding): The binding to be exported
         """
-        self.bindings.update([
-            (binding.qualified_name, binding)
-        ])
+        group = self.overloads.get(binding.qualified_name)
+        if group is not None:
+            # names arrive in address order, so foo_1 can come before foo
+            group.append(binding)
+        else:
+            self.bindings[binding.qualified_name] = binding
 
     def push_bindings(self, bindings: list[Binding]):
-        """Adds a list of bindings at once
+        """
+        Adds a list of bindings at once
 
         Args:
             bindings (list[Binding]): The list of bindings
@@ -421,7 +366,8 @@ class BromaExporter:
         ])
 
     def import_from_idb(self, names: Generator[tuple[int, str], Any, None]):
-        """Imports bindings from an idautils.Names generator
+        """
+        Imports bindings from an idautils.Names generator
 
         Args:
             names (Generator[tuple[int, str], Any, None]):
@@ -438,68 +384,48 @@ class BromaExporter:
             if len(split_name) > 2:
                 continue
 
-            # ["GJUINode", "dGJUINode"] -> "GJUINode" == "GJUINode"
-            if split_name[0] == split_name[1][1:]:
-                split_name = [
-                    split_name[0],
-                    split_name[1].replace("::d", "::~")
-                ]
+            class_name, method = split_name
 
-            # check if first argument is ClassName*
-            # because func_type_data_t.is_static is always False :D
-            func_info = IDAUtils.get_function_info(ea, True)
-            first_arg = next(iter(func_info), None) if func_info is not None \
-                else None
+            overload = search(r"^(.+)_(\d+)$", method)
+            base_name = overload[1] if overload else method
 
-            # i dont feel like it rn tbh
-            if func_info is not None:
-                if "std::" in str(func_info.rettype) or \
-                        any(("std::" in str(p.type) for p in func_info)):
-                    continue
+            # ["GJUINode", "dGJUINode"] -> "~GJUINode"
+            if base_name[:1] in ("d", "~") and base_name[1:] == class_name:
+                base_name = f"~{class_name}"
 
-            split_name_overload = search(r"(\S+)::(\S+)_[0-9]+", split_name[1])
-            if split_name_overload is not None:
-                original_name = f"""{
-                    split_name_overload[0]
-                }::{
-                    split_name_overload[1]
-                }"""
-
-                self.overloads.setdefault(original_name, [])
-
-                if original_name not in self.overloads:
-                    original_overload = self.bindings.pop(original_name, None)
-
-                    if original_overload is not None:
-                        self.overloads[original_name].append(original_overload)
-
-                self.overloads[original_name].append(Binding(
-                    split_name[1],
-                    split_name[0],
-                    RetType(
-                        str(func_info.rettype if func_info else "")
-                    ),
-                    BEUtils.from_ida_args(ea),
-                    is_static=str(
-                        first_arg.type if first_arg else ""
-                    ) != f"{split_name[0]}*",
-                    address=ea - get_imagebase()
-                ))
-
+            signature = IDAUtils.read_function_signature(ea)
+            if signature is None:
                 continue
 
-            self.push_binding(Binding(
-                split_name[1],
-                split_name[0],
-                RetType(
-                    str(func_info.rettype if func_info else "")
-                ),
-                BEUtils.from_ida_args(ea),
-                is_static=str(
-                    first_arg.type if first_arg else ""
-                ) != f"{split_name[0]}*",
+            ret, args, is_variadic = signature
+
+            # i dont feel like it rn tbh
+            # TODO: properly handle stl types with gd:: namespace considerations
+            if ret.is_stl or any(p.is_stl for p in args):
+                continue
+
+            binding = Binding(
+                base_name,
+                class_name,
+                ret,
+                args,
+                is_variadic=is_variadic,
+                # check if first argument is ClassName*
+                # because func_type_data_t.is_static is always False :D
+                is_static=not (args and args[0] == f"{class_name}*"),
                 address=ea - get_imagebase()
-            ))
+            )
+
+            if overload is None:
+                self.push_binding(binding)
+                continue
+
+            group = self.overloads.setdefault(binding.qualified_name, [])
+            if not group:
+                original = self.bindings.pop(binding.qualified_name, None)
+                if original is not None:
+                    group.append(original)
+            group.append(binding)
 
     def export(self):
         """Exports the bindings to the file"""
@@ -507,9 +433,10 @@ class BromaExporter:
             with open(self._filepath, "w", encoding="utf-8"):
                 pass
 
-        with open(self._filepath, "r", encoding="utf-8-sig") as fr, \
-                open(f"{self._filepath}.tmp", "w", encoding="utf-8") as fw:
+        with open(self._filepath, "r", encoding="utf-8-sig", newline="") as fr, \
+                open(f"{self._filepath}.tmp", "w", encoding="utf-8", newline="") as fw:
             current_class_name: str = ""
+            member_indent: str | None = None
 
             for line in fr.readlines():
                 if current_class_name == "":
@@ -517,16 +444,25 @@ class BromaExporter:
 
                     if current_class:
                         current_class_name = current_class.group(1)
+                        member_indent = None
 
-                    fw.write(line)
-                    continue
-
-                if current_class_name == "":
                     fw.write(line)
                     continue
 
                 if line.startswith("}"):
                     current_class_name = ""
+                    fw.write(line)
+                    continue
+
+                # members sit at the class body's own indentation, taken from
+                # its first indented line, anything deeper is left alone
+                if member_indent is None and (m := match(r"[ \t]+(?=\S)", line)):
+                    member_indent = m.group(0)
+
+                if member_indent is None \
+                        or not line.startswith(member_indent) \
+                        or not line[len(member_indent):][:1].strip() \
+                        or line.lstrip().startswith(("//", "[[")):
                     fw.write(line)
                     continue
 
@@ -537,42 +473,32 @@ class BromaExporter:
 
                 qualified_name = f"{current_class_name}::{func.group(3)}"
 
+                if qualified_name not in self.overloads \
+                        and qualified_name not in self.bindings:
+                    fw.write(line)
+                    continue
+
+                params, is_variadic = self._parse_broma_params(
+                    func, current_class_name
+                )
+
                 if qualified_name in self.overloads:
                     if not HAS_IDACLANG:
                         fw.write(line)
                         continue
 
-                    for i, overload in enumerate(
-                        self.overloads[qualified_name]
-                    ):
-                        if overload.parameters == BEUtils.parse_str_args(
-                            func.group(4),
-                            current_class_name,
-                            func.group(1) == "static",
-                        ):
-                            fw.write(
-                                self._get_broma_string(func, overload)
-                            )
-                            self.overloads[qualified_name].pop(i)
-                            continue
-
-                if qualified_name not in self.bindings:
-                    fw.write(line)
-                    continue
-
-                if not self.bindings[qualified_name].parameters == BEUtils.parse_str_args(
-                    func.group(4),
-                    current_class_name,
-                    func.group(1) == "static"
-                ):
-                    fw.write(line)
-                    continue
-
-                fw.write(
-                    self._get_broma_string(
-                        func,
-                        self.bindings[qualified_name]
+                    group = self.overloads[qualified_name]
+                    idx = self._find_overload(group, params, is_variadic)
+                    fw.write(
+                        line if idx is None
+                        else self._get_broma_string(func, group.pop(idx))
                     )
+                    continue
+
+                binding = self.bindings[qualified_name]
+                fw.write(
+                    self._get_broma_string(func, binding)
+                    if binding.parameters == params else line
                 )
 
         move(f"{self._filepath}.tmp", self._filepath)
@@ -581,6 +507,6 @@ class BromaExporter:
         """Resets a BromaExporter instance"""
         self._filepath = ""
         self._target_platform = ""  # type: ignore
-        self.bindings.clear()
-        self.overloads.clear()
+        self.bindings = {}
+        self.overloads = {}
         self.num_exports = 0

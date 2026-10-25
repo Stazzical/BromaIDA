@@ -29,9 +29,10 @@ from ida_typeinf import (
     tinfo_t as ida_tinfo_t,
     argloc_t as ida_argloc_t,
     calc_retloc,
-    get_idati, apply_tinfo,
+    get_idati, apply_tinfo, print_tinfo,
     parse_decl as ida_parse_decl,
-    PT_SIL, BT_VOID, BT_INT,
+    PT_SIL, PRTYPE_1LINE,
+    BT_VOID, BT_INT,
     TERR_OK, BTF_STRUCT, TCMP_DECL,
     TINFO_DEFINITE, CM_CC_MASK,
     FAI_RETPTR, FAI_STRUCT
@@ -50,6 +51,7 @@ from ida_dirtree import (
 )
 from ida_pro import IDA_SDK_VERSION
 from ida_ida import inf_get_cc_cm
+from idc import get_type
 
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.broma.argtype import ArgType, RetType
@@ -478,6 +480,23 @@ class IDAUtils:
         return None
 
     @staticmethod
+    def get_function_declaration(ea: int) -> str | None:
+        """
+        The type declaration of the function stored at `ea`,
+        without a name: 'int __fastcall(Foo *this)'.
+
+        Args:
+            ea (int)
+
+        Returns:
+            str | None
+        """
+        tif = ida_tinfo_t()
+        if not get_tinfo(tif, ea):
+            return None
+        return print_tinfo("", 0, 0, PRTYPE_1LINE, tif, "", "") or None
+
+    @staticmethod
     def get_demangled_info(ea: int) -> tuple[str, list[str], bool] | None:
         """
         Fetch demangled function information of
@@ -500,15 +519,54 @@ class IDAUtils:
         if m is None:
             return None
 
-        raw_args = CppUtils.split_top_level(m.group(2))
-        is_variadic = bool(raw_args) and raw_args[-1] == "..."
-        real_args = raw_args[:-1] if is_variadic else raw_args
+        real_args, is_variadic = CppUtils.split_params(m.group(2))
 
         args = [
             CppUtils.clean_demangled_type(a)
             for a in real_args
         ]
         return m.group(1), args, is_variadic
+
+    @staticmethod
+    def read_function_signature(ea: int) -> tuple[RetType, list[ArgType], bool] | None:
+        """
+        Read a function's signature and turn it into
+        standardized information. Inverse of
+        `IDAUtils.apply_function_signature`.
+        Removes the `__return_ptr` parameter but
+        keeps the `this` parameter.
+
+        Args:
+            ea (int): Effective address of the function in IDA.
+
+        Returns:
+            tuple[RetType, list[ArgType], bool] | None:
+                (return_type, list[arg_type, ...], is_variadic)
+                or None if look-up failed
+        """
+        info = IDAUtils.get_function_info(ea, True)
+
+        if info is None:
+            # TODO: replace this old idc method with something better
+            # also aren't we able to get the return type at least usable to some
+            # extent if the first part of `decl` actually has it?
+            decl = IDAUtils.get_function_declaration(ea)
+            if decl is None or "(" not in decl:
+                return None
+
+            ret, _, params = CppUtils.split_signature(decl)
+            args, is_variadic = ArgType.parse_params(params)
+            return RetType(ret), args, is_variadic
+
+        ret = info.rettype
+        if any(a.flags & FAI_RETPTR for a in info) and ret.is_ptr():
+            ret = ret.get_pointed_object()
+
+        return (
+            RetType(str(ret)),
+            [ArgType(str(a.type), a.name) for a in info if not (a.flags & FAI_RETPTR)],
+            info.get_cc() == IDACallingConvention.ellipsis,
+        )
 
     @staticmethod
     def apply_function_signature(
@@ -582,7 +640,9 @@ class IDAUtils:
 
         this_entry: tuple[str, ida_tinfo_t, int] | None = None
         if not is_static and class_name != "":
-            this_tinfo = IDAUtils.resolve_type_tinfo(ArgType(f"{class_name}*", "this"))
+            this_tinfo = IDAUtils.resolve_type_tinfo(
+                ArgType.for_this(class_name)
+            )
 
             if this_tinfo is None:
                 print(

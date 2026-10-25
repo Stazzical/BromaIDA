@@ -34,6 +34,19 @@ class CppUtils:
 
     _BAD_DECORATOR_RE: Final = compile(r"[*&]\s*<")
 
+    _CALL_CONVS: Final = (
+        "__cdecl", "__stdcall", "__pascal", "__fastcall", "__thiscall",
+        "__golang", "__usercall", "__userpurge"
+    )
+    """Calling convention names as IDA prints them in declarations."""
+
+    _CALL_CONV_RE: Final = compile(rf"\b(?:{'|'.join(_CALL_CONVS)})\b")
+
+    _DECL_NOISE_RE: Final = compile(
+        rf"\b(?:{'|'.join((*_CALL_CONVS, '__noreturn', '__pure'))})\b"
+    )
+    """Everything IDA puts between the return type and the argument list."""
+
     @staticmethod
     def format_ptr(pt: str) -> str:
         """IDA is east pointer (ew)"""
@@ -122,6 +135,57 @@ class CppUtils:
                 start = i + 1
 
         return args
+
+    @staticmethod
+    def split_signature(decl: str) -> tuple[str, str, str]:
+        """
+        Splits a function declaration as IDA prints it
+        into its return type, calling convention and argument list.
+        Attributes such as `__noreturn` are dropped,
+        and the calling convention is empty if there is none.
+
+        Returns:
+            tuple[str, str, str]:
+                'unsigned __int64 __fastcall __pure(Foo *this, int (*cb)(int))' ->
+                ('unsigned __int64', '__fastcall', 'Foo *this, int (*cb)(int)')
+        """
+        decl = decl.strip()
+        head, params = decl, ""
+
+        end = decl.rfind(")")
+        if end != -1:
+            depth = 0
+            for i in range(end, -1, -1):
+                if decl[i] == ")":
+                    depth += 1
+                elif decl[i] == "(":
+                    depth -= 1
+                    if depth == 0:
+                        head, params = decl[:i], decl[i + 1:end]
+                        break
+
+        noise = CppUtils._DECL_NOISE_RE.search(head)
+        call_conv = CppUtils._CALL_CONV_RE.search(head)
+
+        return (
+            (head[:noise.start()] if noise else head).strip(),
+            call_conv.group() if call_conv else "",
+            params
+        )
+
+    @staticmethod
+    def split_params(arg_str: str) -> tuple[list[str], bool]:
+        """
+        Splits a function's argument list like `split_top_level`,
+        but takes a trailing '...' out and reports it separately.
+
+        Returns:
+            tuple[list[str], bool]:
+                'int a, char const*, ...' -> (['int a', 'char const*'], True)
+        """
+        args = CppUtils.split_top_level(arg_str)
+        is_variadic = bool(args) and args[-1] == "..."
+        return (args[:-1] if is_variadic else args), is_variadic
 
     @staticmethod
     def split_qualified(name: str) -> tuple[list[str], str]:
@@ -216,7 +280,7 @@ class STLUtils:
 
         Args:
             stl_t (str): STL type string. Assumed to be
-                normalized first using `STLUtils.normalize_type`.
+                normalized first using `CppUtils.normalize_type`.
 
         Returns:
             STLNode
@@ -235,7 +299,7 @@ class STLUtils:
             stl_t = stl_t[len("const "):].lstrip()
 
         stripped = CppUtils.strip_crp(stl_t)
-        if "std::" not in stl_t or stripped == "std::string":
+        if "std::" not in stl_t or "<" not in stl_t or stripped == "std::string":
             return STLNode(const, stripped, ptr=ptr)
 
         # find the outermost template bracket
@@ -272,7 +336,7 @@ class STLUtils:
 
         Args:
             stl_t (str): Unexpanded STL type. Assumed to be
-                normalized first using `STLUtils.normalize_type`.
+                normalized first using `CppUtils.normalize_type`.
 
         Returns:
             str
@@ -284,8 +348,13 @@ class STLUtils:
             if node.name == "std::string":
                 return f"{node.const} {STLUtils.STL_EXPANSION_MAP['std::string']}{node.ptr}".lstrip()
 
-            template = STLUtils.STL_EXPANSION_MAP[node.name]
             expanded_args = [expand_node(arg) for arg in node.args]
+
+            template = STLUtils.STL_EXPANSION_MAP.get(node.name)
+            if template is None:
+                # no known default template arguments, keep it as written
+                args = f"<{', '.join(expanded_args)}>" if expanded_args else ""
+                return f"{node.const} {node.name}{args}{node.ptr}".lstrip()
 
             return f"{node.const} {template.format(*expanded_args)}{node.ptr}".lstrip()
 
@@ -320,7 +389,7 @@ class STLUtils:
 
         Args:
             raw (str): Raw string of the type. Assumed to be
-                normalized first using `STLUtils.normalize_type`.
+                normalized first using `CppUtils.normalize_type`.
 
         Returns:
             list[tuple[str, bool]]: [(stripped_leaf_type, is_by_value), ...]
