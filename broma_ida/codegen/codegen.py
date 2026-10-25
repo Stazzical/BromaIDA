@@ -7,9 +7,9 @@ import re
 from pybroma import Class
 
 from broma_ida.metadata import __version__, PLUGIN_NAME
-from broma_ida.broma.class_graph import ClassGraph
+from broma_ida.codegen.class_graph import ClassGraph
 from broma_ida.broma.constants import BROMA_PLATFORMS
-from broma_ida.class_builder.class_builder import ClassBuilder
+from broma_ida.codegen.class_builder import ClassBuilder
 from broma_ida.utils import CppUtils
 
 from ida_nalt import get_root_filename

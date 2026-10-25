@@ -38,8 +38,8 @@ from pybroma import (
 from broma_ida.broma.argtype import ArgType
 from broma_ida.broma.constants import BROMA_PLATFORMS, IDACallingConvention
 from broma_ida.broma.binding import Binding
-from broma_ida.broma.codegen import BromaCodegen
-from broma_ida.broma.class_graph import STLStubDefinition, STLTypeDefinitions, ClassGraph
+from broma_ida.codegen.codegen import BromaCodegen
+from broma_ida.codegen.class_graph import STLStubDefinition, STLTypeDefinitions, ClassGraph
 from broma_ida.utils import (
     path_exists,
     CppUtils, STLNode, STLUtils
@@ -673,6 +673,7 @@ class BromaImporter:
 
     def _compute_types_digest(self, header: Path) -> str:
         h = sha256()
+
         for part in (
             header.read_bytes(),
             IDAUtils.get_srclang_parser().encode(),
@@ -680,6 +681,7 @@ class BromaImporter:
         ):
             h.update(len(part).to_bytes(8, "big"))
             h.update(part)
+
         return h.hexdigest()
 
     def _load_root(self) -> None:
