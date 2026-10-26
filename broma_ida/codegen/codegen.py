@@ -11,8 +11,7 @@ from broma_ida.codegen.class_graph import ClassGraph
 from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.codegen.class_builder import ClassBuilder
 from broma_ida.utils import CppUtils
-
-from ida_nalt import get_root_filename
+from broma_ida.ida.env import BinaryInfo
 
 
 DIRS = PlatformDirs(appname=PLUGIN_NAME, appauthor=False)
@@ -28,7 +27,7 @@ class BromaCodegen:
     """Header file writer codegen for BromaIDA."""
 
     _classes: dict[str, Class]
-    _target_platform: BROMA_PLATFORMS
+    _binary: BinaryInfo
     _headers_path: Path
     _broma_path: Path
 
@@ -48,7 +47,7 @@ class BromaCodegen:
 
         f.write(
             ClassBuilder(
-                self._target_platform,
+                self._binary.platform,
                 cls,
                 self._graph
             ).get_str()
@@ -64,7 +63,7 @@ class BromaCodegen:
 
     def __init__(
         self,
-        platform: BROMA_PLATFORMS,
+        binfo: BinaryInfo,
         broma_classes: dict[str, Class],
         graph: ClassGraph,
         headers_path: Path,
@@ -73,7 +72,7 @@ class BromaCodegen:
         self._enums_count: int = 0
         self._header_classes_count: int = 0
 
-        self._target_platform = platform
+        self._binary = binfo
         self._classes = broma_classes
         self._graph = graph
         self._headers_path = headers_path
@@ -94,10 +93,10 @@ class BromaCodegen:
         self._defined_classes = set()
         stl_defs = self._graph.stl_type_definitions
 
-        binary_name = Path(get_root_filename()).stem
+        binary_name = self._binary.stem
         self._file_path = (
             self._output_path
-            / f"{self._target_platform}-{binary_name}.hpp"
+            / f"{self._binary.platform}-{binary_name}.hpp"
         )
 
         with open(
@@ -117,10 +116,10 @@ class BromaCodegen:
                     "BROMAIDA_PLATFORM_MACRO_NAME":
                         self._get_bromaida_platform_macro(),
                     "BROMAIDA_IS_PLATFORM_MACHO_VALUE":
-                        int(self._target_platform in ["imac", "m1", "ios"]),
+                        int(self._binary.platform in ["imac", "m1", "ios"]),
                     "BROMAIDA_IS_PLATFORM_ANDROID_VALUE":
                         int(
-                            self._target_platform in ["android32", "android64"]
+                            self._binary.platform in ["android32", "android64"]
                         )
                 })
             )
@@ -242,7 +241,7 @@ class BromaCodegen:
         }
 
         return f"""BROMAIDA_PLATFORM_{
-            plat_to_macro_suffix[self._target_platform]
+            plat_to_macro_suffix[self._binary.platform]
         }"""
 
     def _list_class_definitions(self, fcontent: list[str]):

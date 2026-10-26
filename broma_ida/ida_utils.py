@@ -1,8 +1,6 @@
-from typing import Callable, NoReturn
+from typing import Callable
 from functools import cache
-from struct import unpack
 from pathlib import Path
-from hashlib import sha256
 from re import fullmatch, compile
 from enum import Enum, auto
 
@@ -12,13 +10,6 @@ from ida_name import (
     get_name_ea, get_ea_name, set_name,
     SN_NOWARN, GN_SHORT, GN_DEMANGLED
 )
-from ida_diskio import idadir
-from ida_ida import inf_get_filetype, f_PE, f_MACHO, f_ELF
-from ida_segment import (
-    get_first_seg, get_segm_by_name
-)
-from ida_bytes import get_dword, get_bytes
-from ida_loader import get_path, PATH_TYPE_IDB
 from ida_funcs import (
     func_t as ida_func_t, FUNC_LIB
 )
@@ -38,8 +29,7 @@ from ida_typeinf import (
     FAI_RETPTR, FAI_STRUCT
 )
 from ida_nalt import (
-    get_tinfo, retrieve_input_file_md5,
-    get_imagebase
+    get_tinfo
 )
 from ida_dirtree import (
     get_std_dirtree,
@@ -51,12 +41,11 @@ from ida_dirtree import (
 )
 from ida_pro import IDA_SDK_VERSION
 from ida_ida import inf_get_cc_cm
-from idc import get_type
 
-from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.broma.argtype import ArgType, RetType
 from broma_ida.ui.ask_popup import AskPopup
 from broma_ida.utils import CppUtils
+from broma_ida.ida.env import get_binary_info, to_rva
 from broma_ida.broma.constants import IDACallingConvention
 
 HAS_IDACLANG = False
@@ -80,35 +69,10 @@ class TypeState(Enum):
     OK = auto()
 
 
-def stop(reason: str | None = None) -> NoReturn:
-    """Kills the plugin process."""
-    raise SystemExit if reason is None else Exception(reason)
-
-
 class IDAUtils:
     """Collection of utilities to work with IDA indirectly."""
 
     _CLASS_NAME_RE = compile(r"^[A-Za-z_]\w*(::[A-Za-z_]\w*)*$")
-
-    # Mach-O Load commands
-    _MINIMUM_OS_VERSION_LOAD_COMMAND = 0x32
-
-    # Mach-O CPU types
-    _CPU_TYPE_ARM64 = 0x0100000c
-    _CPU_TYPE_X86_64 = 0x01000007
-
-    # Mach-O Platform types
-    _PLATFORM_TYPE_MACOS = 0x1
-    _PLATFORM_TYPE_IOS = 0x2
-
-    _plat_to_printable = {
-        "win": "Windows",
-        "imac": "Intel MacOS",  # MacchewOS my beloved
-        "m1": "M1 MacOS",
-        "ios": "iOS",
-        "android32": "Android (32-bit)",
-        "android64": "Android (64-bit)"
-    }
 
     class DirtreeCollector(ida_dirtree_visitor_t):
         def __init__(self, tree: TreeType, path: str, top: bool = True):
@@ -178,114 +142,6 @@ class IDAUtils:
             return 0
 
     @staticmethod
-    def __get_minimum_mach_o_os_version() -> int:
-        """
-        Gets the minimum OS version struct from the Mach-O header.
-
-        Returns:
-            int: -1 if it couldn't find MOSV load command
-        """
-        start = get_imagebase()
-        magic = get_dword(start)
-
-        if magic == 0xFEEDFACF:
-            header_size = 32  # 64-bit Mach-O header size
-        else:
-            header_size = 28  # 32-bit Mach-O header size
-
-        mach_header = get_bytes(start, header_size)
-        magic_number, cpu_type, cpu_subtype, file_type, \
-            ncmds, cmds_size, flags, reserved = \
-            unpack("<IIIIIIII", mach_header)
-
-        offset = start + header_size
-
-        for _ in range(ncmds):
-            cmd_header = get_bytes(offset, 8)
-            if not cmd_header or len(cmd_header) < 8:
-                break
-
-            cmd, cmdsize = unpack("<II", cmd_header)
-
-            if cmd == IDAUtils._MINIMUM_OS_VERSION_LOAD_COMMAND:
-                minimum_os_version_struct = get_bytes(offset, 24)
-                commandtype, cmd_size, platform_type, min_os_ver, sdk_ver, \
-                    num_tools = unpack("<IIIIII", minimum_os_version_struct)
-
-                return platform_type
-
-            offset += cmdsize
-
-        return -1
-
-    @staticmethod
-    @cache
-    def get_platform() -> BROMA_PLATFORMS:
-        """
-        Gets the currently open binary's target platform.
-        Raises a `RuntimeError` if detection fails.
-
-        Returns:
-            BROMA_PLATFORMS
-        """
-        file_type = inf_get_filetype()
-
-        if file_type == f_PE:
-            return "win"
-        elif file_type == f_MACHO:
-            cpu_type = get_dword(
-                get_segm_by_name("HEADER").start_ea + 4
-            )
-
-            if cpu_type == IDAUtils._CPU_TYPE_ARM64:
-                platform_type = IDAUtils.__get_minimum_mach_o_os_version()
-
-                if platform_type == IDAUtils._PLATFORM_TYPE_IOS:
-                    return "ios"
-                elif platform_type == IDAUtils._PLATFORM_TYPE_MACOS:
-                    return "m1"
-            elif cpu_type == IDAUtils._CPU_TYPE_X86_64:
-                return "imac"
-        elif file_type == f_ELF:
-            bitness = get_first_seg().bitness
-
-            if bitness == 0x1:
-                return "android32"
-            elif bitness == 0x2:
-                return "android64"
-
-        # TODO: actual user-facing prompt to show this, or make it be handled elsewhere
-        raise RuntimeError("no supported target platform was found for the currently open binary")
-
-    @staticmethod
-    @cache
-    def get_platform_printable() -> str:
-        """
-        Printable platform name.
-
-        Returns:
-            str
-        """
-        return IDAUtils._plat_to_printable[IDAUtils.get_platform()]
-
-    @staticmethod
-    @cache
-    def get_idb_sha256() -> str:
-        """
-        Gets a unique SHA-256 of the IDB.
-        The hash's input is "[full path of the IDB]-[binary's md5]".
-
-        Returns:
-            str
-        """
-        idb_path: str = get_path(PATH_TYPE_IDB).replace("\\", "/")
-        idb_binary_md5: str = retrieve_input_file_md5().hex()
-
-        hash_str = f"{idb_path}-{idb_binary_md5}".encode()
-
-        return sha256(hash_str).hexdigest()
-
-    @staticmethod
     @cache
     def get_srclang_parser() -> str:
         """
@@ -301,27 +157,6 @@ class IDAUtils:
         return "clang" if IDA_SDK_VERSION < 920 else "old_clang"
 
     @staticmethod
-    @cache
-    def get_thunk_size() -> tuple[int] | tuple[int, int]:
-        """
-        Gets the size of a jump thunk in the current binary.
-
-        Returns:
-            int
-        """
-        platform = IDAUtils.get_platform()
-
-        # either a jmp or a lea + jmp
-        if platform in ("win",):
-            return 6, 12
-        elif platform in ("imac", "m1", "android32", "ios"):
-            return 12,
-        elif platform == "android64":
-            return 16,
-
-        return -1,
-
-    @staticmethod
     def rename_func(addr: int, name: str, max: int = 10) -> bool:
         """
         Renames the function at the given address with `name`.
@@ -331,7 +166,7 @@ class IDAUtils:
         Args:
             addr (int): The address to rename
             name (str): The name to give it
-            max (int, optional): Maximum number of retires.
+            max (int, optional): Maximum number of retries.
                 Defaults to 10.
 
         Returns:
@@ -350,7 +185,7 @@ class IDAUtils:
             if ida_prev_addr != BADADDR and addr != ida_prev_addr:
                 if AskPopup(
                     f"{name} is already taken at "
-                    f"{hex(ida_prev_addr - get_imagebase())} while trying to "
+                    f"{hex(to_rva(ida_prev_addr))} while trying to "
                     f"rename {hex(addr)}\n"
                     "Overwrite or keep current name?\n"
                     "(Old location will be renamed to "
@@ -363,18 +198,9 @@ class IDAUtils:
                         f"sub_{hex(ida_prev_addr)[2:]}",
                         SN_NOWARN
                     )
+                    renamed = set_name(addr, name, SN_NOWARN)
 
         return renamed
-
-    @staticmethod
-    def get_ida_path(path: str) -> Path:
-        """
-        Gets a path relative to the IDA root folder.
-
-        Returns:
-            Path: The path as a pathlib.Path
-        """
-        return Path(idadir(path))
 
     @staticmethod
     def is_nontrivial_for_calls(tif: ida_tinfo_t, known_nontrivials: set[str]) -> bool:
@@ -547,9 +373,6 @@ class IDAUtils:
         info = IDAUtils.get_function_info(ea, True)
 
         if info is None:
-            # TODO: replace this old idc method with something better
-            # also aren't we able to get the return type at least usable to some
-            # extent if the first part of `decl` actually has it?
             decl = IDAUtils.get_function_declaration(ea)
             if decl is None or "(" not in decl:
                 return None
@@ -667,7 +490,7 @@ class IDAUtils:
 
             resolved_args.append((arg.name, tinfo, 0))
 
-        itanium_abi = IDAUtils.get_platform() != "win"
+        itanium_abi = get_binary_info().profile.itanium_abi
 
         ordered: list[tuple[str, ida_tinfo_t, int]] = []
         if needs_retptr and itanium_abi and retptr_entry is not None:
@@ -718,13 +541,13 @@ class IDAUtils:
 
         ida_is_lib = bool(func.flags & FUNC_LIB)
 
-        if ida_is_lib and func.size() in IDAUtils.get_thunk_size():
+        if ida_is_lib and func.size() in get_binary_info().profile.thunk_sizes:
             return True
 
         # skimmed thru 2.2082 and 450 seemed to be the size where
         # library and random garbage funcs became actual functions
         # TODO: spend some time understanding what this is about and make it more universal
-        if IDAUtils.get_platform() == "win":
+        if get_binary_info().platform == "win":
             if ida_is_lib and func.size() >= 450:
                 func.flags &= ~FUNC_LIB
                 set_name(func.start_ea, "", SN_NOWARN)

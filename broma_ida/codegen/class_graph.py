@@ -5,6 +5,7 @@ from pybroma import Class
 
 from broma_ida.data.data_manager import DataManager
 from broma_ida.broma.binding import FunctionSignature
+from broma_ida.broma.constants import BROMA_PLATFORMS
 from broma_ida.utils import CppUtils, STLUtils
 
 
@@ -52,6 +53,7 @@ class ClassGraph:
     """Encodes the full inheritance topology of all Broma classes."""
 
     _classes: dict[str, Class]
+    _platform: BROMA_PLATFORMS
     _info: dict[str, "ClassGraph._ClassInfo"]
     _namespace_prefixes: set[str]
 
@@ -71,8 +73,10 @@ class ClassGraph:
         # normalized_type -> [(stripped_leaf_type, is_by_value, is_from_function), ...]
         type_refs: dict[str, list[tuple[str, bool, bool]]] = field(default_factory=dict)
 
-    def __init__(self, classes: dict[str, Class]):
+    def __init__(self, classes: dict[str, Class], platform: BROMA_PLATFORMS):
         self._classes = classes
+        self._platform = platform
+
         self._info = {}
         self._namespace_prefixes = set()
         self.class_order = []
@@ -93,8 +97,8 @@ class ClassGraph:
         if DataManager().get("debug_info"):
             self._diagnose_broken_overrides()
 
-    @staticmethod
     def _build_class_info(
+        self,
         name: str,
         cls: Class
     ) -> "ClassGraph._ClassInfo":
@@ -132,7 +136,7 @@ class ClassGraph:
                     process_type(arg_t.name, from_func=True)
 
                 # lowkey don't need *all* of them
-                ff_sig = FunctionSignature.from_field(name, ff)
+                ff_sig = FunctionSignature.from_field(name, ff, self._platform)
 
                 if ff_sig in seen_sigs:
                     print(

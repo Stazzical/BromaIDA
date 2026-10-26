@@ -19,7 +19,10 @@ from broma_ida.metadata import (
     PLUGIN_NAME, PLUGIN_DESCRIPTION, PLUGIN_HOTKEY
 )
 from broma_ida.utils import path_exists
-from broma_ida.ida_utils import stop, IDAUtils
+from broma_ida.ida.env import (
+    stop, get_binary_info,
+    UnsupportedBinaryError
+)
 from broma_ida.broma.importer import BromaImporter
 from broma_ida.broma.exporter import BromaExporter
 
@@ -63,7 +66,7 @@ def on_import(form: MainForm, code: int = 0):
 
     form.Close(1)
 
-    platform = IDAUtils.get_platform()
+    binfo = get_binary_info()
 
     entry = ask_file(False, "*.bro", "Select the Broma entry file")
     if not path_exists(entry, ".bro"):
@@ -71,14 +74,14 @@ def on_import(form: MainForm, code: int = 0):
         stop()
 
     broma_importer = BromaImporter(
-        platform, Path(__file__).resolve().parent / "broma_ida" / "types", Path(entry)
+        binfo, Path(__file__).resolve().parent / "broma_ida" / "types", Path(entry)
     )
     broma_importer.parse_bromas()
     broma_importer.import_into_idb()
 
     SimplePopup(
         "Finished importing "
-        f"{IDAUtils.get_platform_printable()} "
+        f"{binfo.profile.printable} "
         f"bindings {'and types ' if broma_importer.has_types else ''}"
         "from Broma files.",
         "OK"
@@ -93,7 +96,7 @@ def on_export(form: MainForm, code: int = 0):
 
     form.Close(1)
 
-    platform = IDAUtils.get_platform()
+    platform = get_binary_info().platform
 
     if platform.startswith("android"):
         SimplePopup(
@@ -128,12 +131,22 @@ def on_export(form: MainForm, code: int = 0):
 
 def bida_main():
     """Plugin main entrypoint."""
+
+    try:
+        bingo = get_binary_info()
+    except UnsupportedBinaryError:
+        ida_warning(
+            f"{PLUGIN_NAME} was unable to detect this binary's platform.\n"
+            "Cannot execute this plugin on this binary."
+        )
+        stop()
+
     DataManager().init(
         SHELF_DIR.user_config_path / "shelf"
     )
 
     form_code = MainForm(
-        IDAUtils.get_platform_printable(),
+        bingo.profile.printable,
         on_import,
         on_export
     ).show()
@@ -145,6 +158,7 @@ def bida_main():
 
 class BromaIDAPlugin(ida_plugin_t):
     """IDA plugin instance."""
+
     flags = IDA_PLUGIN_PROC
     comment = PLUGIN_DESCRIPTION
     help = f"Press {PLUGIN_HOTKEY} to begin importing/exporting bindings."

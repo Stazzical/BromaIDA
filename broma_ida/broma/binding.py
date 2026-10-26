@@ -4,13 +4,12 @@ from functools import cached_property
 from ida_name import is_visible_cp
 
 from pybroma import (
-    FunctionProto, MemberFunctionProto,
     FunctionBindField, Function,
     OffsetStatus
 )
 
 from broma_ida.broma.argtype import ArgType, RetType
-from broma_ida.ida_utils import IDAUtils
+from broma_ida.broma.constants import BROMA_PLATFORMS
 
 
 @dataclass
@@ -47,18 +46,18 @@ class FunctionSignature:
         return -2 if status == OffsetStatus.Inlined else -1
 
     @staticmethod
-    def _extract_common(f: FunctionBindField | Function) -> dict:
+    def _extract_common(f: FunctionBindField | Function, platform: BROMA_PLATFORMS) -> dict:
         """
         Shared field extraction for from_field/from_freefunc classmethods.
 
         Args:
             f (FunctionBindField | Function)
+            platform (BROMA_PLATFORMS)
 
         Returns:
             dict
         """
         proto = f.prototype
-        platform = IDAUtils.get_platform()
         # get address as an int at base of 16 (hexadecimal int)
         # here we only use it to know if the function was inlined
         # or missing on the target platform
@@ -89,7 +88,8 @@ class FunctionSignature:
     def from_field(
         cls,
         class_name: str,
-        f: FunctionBindField
+        f: FunctionBindField,
+        platform: BROMA_PLATFORMS
     ) -> "FunctionSignature":
         """
         Get a FunctionSignature class instance from the
@@ -98,11 +98,12 @@ class FunctionSignature:
         Args:
             class_name (str)
             f (FunctionBindField)
+            platform (BROMA_PLATFORMS)
 
         Returns
             FunctionSignature
         """
-        data = cls._extract_common(f)
+        data = cls._extract_common(f, platform)
         # FunctionSignature doesn't keep address, remove
         data.pop("_raw_addr")
         return cls(class_name=class_name, **data)
@@ -238,7 +239,8 @@ class Binding(FunctionSignature):
     def from_field(
         cls,
         class_name: str,
-        f: FunctionBindField
+        f: FunctionBindField,
+        platform: BROMA_PLATFORMS
     ) -> "Binding":
         """
         Get a Binding class instance from the
@@ -247,27 +249,29 @@ class Binding(FunctionSignature):
         Args:
             class_name (str)
             f (FunctionBindField)
+            platform (BROMA_PLATFORMS)
 
         Returns
             Binding
         """
-        data = cls._extract_common(f)
+        data = cls._extract_common(f, platform)
         address = data.pop("_raw_addr")
         return cls(class_name=class_name, address=address, **data)
 
     @classmethod
-    def from_freefunc(cls, f: Function) -> "Binding":
+    def from_freefunc(cls, f: Function, platform: BROMA_PLATFORMS) -> "Binding":
         """
         Get a Binding class instance of a free
         function from its Function instance.
 
         Args:
             f (Function)
+            platform (BROMA_PLATFORMS)
 
         Returns
             Binding
         """
-        data = cls._extract_common(f)
+        data = cls._extract_common(f, platform)
         address = data.pop("_raw_addr")
         return cls(class_name="", address=address, **data)
 

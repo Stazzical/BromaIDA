@@ -425,6 +425,7 @@ class BromaExporter:
                 original = self.bindings.pop(binding.qualified_name, None)
                 if original is not None:
                     group.append(original)
+
             group.append(binding)
 
     def export(self):
