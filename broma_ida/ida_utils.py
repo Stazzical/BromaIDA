@@ -39,7 +39,6 @@ from ida_dirtree import (
     dirtree_t as ida_dirtree_t,
     DIRTREE_LOCAL_TYPES
 )
-from ida_pro import IDA_SDK_VERSION
 from ida_ida import inf_get_cc_cm
 
 from broma_ida.broma.argtype import ArgType, RetType
@@ -47,14 +46,6 @@ from broma_ida.ui.ask_popup import AskPopup
 from broma_ida.utils import CppUtils
 from broma_ida.ida.env import get_binary_info, to_rva
 from broma_ida.broma.constants import IDACallingConvention
-
-HAS_IDACLANG = False
-try:
-    import ida_srclang
-    del ida_srclang
-    HAS_IDACLANG = True
-except ModuleNotFoundError:
-    pass
 
 
 TreeType = int | ida_dirtree_t
@@ -140,21 +131,6 @@ class IDAUtils:
                 pass
 
             return 0
-
-    @staticmethod
-    @cache
-    def get_srclang_parser() -> str:
-        """
-        Gets the current source language parser name.
-
-        Returns:
-            str
-        """
-        if not HAS_IDACLANG:
-            return "none"
-
-        # TODO: support new clang parser in IDA 9.2+
-        return "clang" if IDA_SDK_VERSION < 920 else "old_clang"
 
     @staticmethod
     def rename_func(addr: int, name: str, max: int = 10) -> bool:

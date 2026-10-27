@@ -9,7 +9,11 @@ from ida_bytes import get_dword, get_bytes
 from ida_diskio import idadir
 from ida_funcs import get_func, get_func_name
 from ida_ida import inf_get_filetype, f_PE, f_MACHO, f_ELF
-from ida_loader import get_path, PATH_TYPE_IDB
+from ida_kernwin import take_database_snapshot
+from ida_loader import (
+    get_path, PATH_TYPE_IDB,
+    snapshot_t
+)
 from ida_nalt import (
     get_imagebase, get_root_filename,
     retrieve_input_file_md5
@@ -45,7 +49,7 @@ class PlatformProfile:
 
     printable: str
     thunk_sizes: tuple[int, ...]
-    clang_target: str
+    clang_args: str
     stl_dir: str
     itanium_abi: bool
     instruction_alignment: int = 1
@@ -56,7 +60,7 @@ PLATFORM_PROFILES: dict[BROMA_PLATFORMS, PlatformProfile] = {
     "imac":         PlatformProfile("Intel MacOS", (12,), "-target x86_64-apple-darwin", "macho", itanium_abi=True),
     "m1":           PlatformProfile("M1 MacOS", (12,), "-target arm64-apple-darwin", "macho", itanium_abi=True, instruction_alignment=4),
     "ios":          PlatformProfile("iOS", (12,), "-target arm64-apple-darwin", "macho", itanium_abi=True, instruction_alignment=4),
-    "android32":    PlatformProfile("Android (32-bit)", (12,), "-target armv7-none-linux-androideabi", "android", itanium_abi=True),
+    "android32":    PlatformProfile("Android (32-bit)", (12,), "-target armv7-none-linux-androideabi", "android", itanium_abi=True, instruction_alignment=2),
     "android64":    PlatformProfile("Android (64-bit)", (16,), "-target aarch64-none-linux-android", "android", itanium_abi=True, instruction_alignment=4)
 }
 
@@ -171,6 +175,22 @@ def get_idb_sha256() -> str:
     hash_str = f"{idb_path}-{idb_binary_md5}".encode()
 
     return sha256(hash_str).hexdigest()
+
+
+def take_snapshot(description: str) -> tuple[bool, str]:
+    """
+    Takes an IDA database snapshot.
+
+    Args:
+        description (str): Truncated to 128 characters.
+
+    Returns:
+        tuple[bool, str]: (success, error message)
+    """
+    ss = snapshot_t()
+    # snapshot_t.desc is a char[128]
+    ss.desc = description[:127]
+    return take_database_snapshot(ss)
 
 
 def address_problem(ea: int) -> str | None:

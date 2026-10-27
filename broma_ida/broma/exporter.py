@@ -11,7 +11,8 @@ from broma_ida.broma.constants import (
 )
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.argtype import ArgType, RetType
-from broma_ida.ida_utils import IDAUtils, HAS_IDACLANG
+from broma_ida.ida_utils import IDAUtils
+from broma_ida.ida.parser import resolve_parser
 
 from broma_ida.data.data_manager import DataManager
 
@@ -484,7 +485,7 @@ class BromaExporter:
                 )
 
                 if qualified_name in self.overloads:
-                    if not HAS_IDACLANG:
+                    if resolve_parser(DataManager().get("use_new_clang", False)) is None:
                         fw.write(line)
                         continue
 

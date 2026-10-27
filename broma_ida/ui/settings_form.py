@@ -6,7 +6,7 @@ from broma_ida.metadata import (
     __version__, __author__, __maintainer__,
     PLUGIN_NAME, PLUGIN_GITHUB
 )
-from broma_ida.ida_utils import HAS_IDACLANG
+from broma_ida.ida.parser import resolve_parser
 
 from broma_ida.ui.types.dynamic_form import DynamicForm
 from broma_ida.data.data_manager import DataManager
@@ -17,6 +17,7 @@ from broma_ida.data.settings import (
 
 class SettingsForm(DynamicForm):
     """The settings form."""
+
     _pending: dict[str, bool]
 
     @staticmethod
@@ -29,8 +30,8 @@ class SettingsForm(DynamicForm):
             group
 
         Returns:
-            str:
-                Full generated string of all settings within the group.
+            str: Full generated string of all settings
+                within the group.
         """
         rows = []
         last_idx = len(group.settings) - 1
@@ -42,7 +43,7 @@ class SettingsForm(DynamicForm):
                 else f"#{s.tooltip}"
             )
             row = f"<{prefix}#{s.label}:{{{s.control_name}}}>"
-    
+
             if i == last_idx:
                 row += f"{{{group.control_name}}}>"
 
@@ -51,6 +52,7 @@ class SettingsForm(DynamicForm):
         return "\n".join(rows)
 
     def __init__(self):
+        # dict for pending user input to be synced to DataManager
         self._pending = {}
 
         controls: dict = {
@@ -104,11 +106,18 @@ BUTTON CANCEL Cancel
                 break
 
         import_ctrl = getattr(self, SETTINGS_BY_KEY["import_types"].control_name)
-        if fid in [-1, import_ctrl.id]:
-            if not HAS_IDACLANG:
-                self.EnableField(import_ctrl, False)
+        watched = [-1, import_ctrl.id]
+
+        new_clang = SETTINGS_BY_KEY.get("use_new_clang")
+        if new_clang is not None:
+            watched.append(getattr(self, new_clang.control_name).id)
+
+        if fid in watched:
+            use_new = self._pending.get("use_new_clang", DataManager().get("use_new_clang", False))
+            usable = resolve_parser(use_new) is not None # type: ignore
+            self.EnableField(import_ctrl, usable)
+            if not usable:
                 self._pending["import_types"] = False
-                DataManager().set("import_types", False)
 
         # only sync from self._pending upon pressing the 'OK' button
         # lets the user abort their changes if they want to

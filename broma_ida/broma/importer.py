@@ -20,11 +20,16 @@ from ida_typeinf import (
     FAI_RETPTR
 )
 from ida_name import get_ea_name, GN_SHORT, GN_DEMANGLED
+from ida_pro import IDA_SDK_VERSION
 from idautils import Names
 from ida_dirtree import (
     get_std_dirtree,
     direntry_t as ida_direntry_t,
     DIRTREE_LOCAL_TYPES
+)
+from ida_srclang import (
+    parse_decls_with_parser,
+    set_parser_argv,
 )
 
 from pybroma import (
@@ -33,7 +38,7 @@ from pybroma import (
 )
 
 from broma_ida.broma.argtype import ArgType
-from broma_ida.broma.constants import BROMA_PLATFORMS, IDACallingConvention
+from broma_ida.broma.constants import IDACallingConvention
 from broma_ida.broma.binding import Binding
 from broma_ida.codegen.codegen import BromaCodegen
 from broma_ida.codegen.class_graph import STLStubDefinition, STLTypeDefinitions, ClassGraph
@@ -46,9 +51,12 @@ from broma_ida.ida.env import (
     address_problem,
     BinaryInfo
 )
+from broma_ida.ida.parser import (
+    stl_headers_dir,
+    parser_argv, resolve_parser
+)
 from broma_ida.ida_utils import (
-    IDAUtils, DirtreeEntry, TypeState,
-    HAS_IDACLANG
+    IDAUtils, DirtreeEntry, TypeState
 )
 
 from broma_ida.data.data_manager import DataManager
@@ -59,12 +67,6 @@ from broma_ida.ui.directory_input_form import DirectoryInputForm
 from broma_ida.ui.ask_popup import AskPopup
 from broma_ida.ui.wait_box import WaitBox
 from broma_ida.ui.temp_jump_to_address import TempJumpToAddress
-
-if HAS_IDACLANG:
-    from ida_srclang import (
-        set_parser_argv, parse_decls_with_parser,
-        select_parser_by_name as select_srclang_parser_by_name
-    )
 
 
 class VerifyUtils:
@@ -238,36 +240,6 @@ class VerifyUtils:
 
 class BIUtils:
     """BromaImporter utilities"""
-
-    _common_clang_argv = "-x c++ -nostdlib -nostdinc -nostdinc++"
-
-    @staticmethod
-    def get_parser_argv(plat_args: str) -> str:
-        """
-        Gets the parser arguments for a certain platform.
-
-        Args:
-            plat_args (str)
-
-        Returns:
-            str
-        """
-        return f"{BIUtils._common_clang_argv} {plat_args}"
-
-    @staticmethod
-    def get_stl_headers_path(plat_dir: str, headers_root: Path) -> str:
-        """
-        Gets the STL headers path for a given platform.
-
-        Args:
-            plat_dir (str)
-            headers_root (pathlib.Path): pathlib.Path to the root folder
-                of where the headers are located.
-
-        Returns:
-            str
-        """
-        return str(headers_root / "c++stl" / plat_dir)
 
     @staticmethod
     def prompt_invalid_dir(input_str: str, dm_key: str):
@@ -655,13 +627,13 @@ class BromaImporter:
 
         return True
 
-    def _compute_types_digest(self, header: Path) -> str:
+    def _compute_types_digest(self, header: Path, parser_name: str) -> str:
         h = sha256()
 
         for part in (
             header.read_bytes(),
-            IDAUtils.get_srclang_parser().encode(),
-            BIUtils.get_parser_argv(self._binary.platform).encode(),
+            f"{parser_name}@{IDA_SDK_VERSION}".encode(),
+            parser_argv(self._binary.profile.clang_args).encode(),
         ):
             h.update(len(part).to_bytes(8, "big"))
             h.update(part)
@@ -895,22 +867,23 @@ class BromaImporter:
         Codegen if importing types is enabled in settings.
         """
         import_types: bool = DataManager().get("import_types")
+        use_new_clang = DataManager().get("use_new_clang", False)
+        parser_name = resolve_parser(use_new_clang) if import_types else None
         types_file: Path | None = None
         types_digest = ""
 
-        if not HAS_IDACLANG and import_types:
+        if import_types and parser_name is None:
             ida_warning(
-                "Trying to import types without IDAClang!\n"
-                "Disabling importing of types..."
+                "BromaIDA was unable to find a usable parser for importing types!\n"
+                "Type importation will be skipped this time."
             )
-            DataManager().set("import_types", False)
             import_types = False
 
         if import_types:
             # Hash check for bindings
             # generate the header first and compute its digest for checking
             types_file = self._codegen.write()
-            types_digest = self._compute_types_digest(types_file)
+            types_digest = self._compute_types_digest(types_file, parser_name) # type: ignore
 
             if not DataManager().get("disable_input_hash_check"):
                 if self._state.get("types.digest") == types_digest:
@@ -950,7 +923,7 @@ class BromaImporter:
                     DataManager().set("import_types", False)
                     print("[-] BromaImporter: Types import cancelled and disabled by user.")
                 elif types_file is not None:
-                    self.has_types = self.import_types(types_file)
+                    self.has_types = self.import_types(types_file, parser_name) # type: ignore
                     IDAUtils.resolve_type_tinfo.cache_clear()
 
                 if self.has_types:
@@ -1004,37 +977,47 @@ class BromaImporter:
             ).show() == ASKBTN_BTN1:
                 IDAUtils.rename_func(ea, name)
 
-    def import_types(self, types_file: Path) -> bool:
+    def import_types(self, types_file: Path, parser_name: str) -> bool:
         """
-        Import types into IDA using BromaCodegen and the
-        Clang parser.
+        Parse the generated BromaCodegen header file using
+        the provided `parser_name` source parser through IDA.
 
         Returns:
             bool: Value that VerifyUtils.verify_types_postimport
-                returns to check if type import succeeded.
+                returns to check if type import succeeded, or False
+                if other parts of the process failed.
         """
-        srclang_parser = IDAUtils.get_srclang_parser()
-        select_srclang_parser_by_name(srclang_parser)
-
         if DataManager().get("set_default_parser_args"):
-            set_parser_argv(
-                srclang_parser,
-                BIUtils.get_parser_argv(self._binary.profile.clang_target)
-            )
+            if set_parser_argv(
+                parser_name, parser_argv(self._binary.profile.clang_args)
+            ) != 0:
+                print(f"[!] BromaImporter: Parser '{parser_name}' rejected the default arguments!")
 
-        set_c_header_path(
-            BIUtils.get_stl_headers_path(self._binary.profile.stl_dir, self._headers_path)
-        )
+        stl = stl_headers_dir(self._binary.profile.stl_dir, self._headers_path)
+        if not stl.is_dir():
+            print(
+                f"[!] BromaImporter: STL headers folder is missing ({stl})! "
+                "Headers include path for the source parser was not changed!"
+            )
+        else:
+            set_c_header_path(str(stl))
 
         with WaitBox("Importing types..."):
             self._pre_import_types()
+            parse_result = parse_decls_with_parser(parser_name, None, types_file.as_posix(), True)
 
-            parse_decls_with_parser(
-                srclang_parser,
-                None,
-                types_file.as_posix(),
-                True
+        if parse_result == -1:
+            ida_warning(
+                "BromaIDA was unable to find the parser for the generated types file!"
+                "\nTypes are not imported!"
             )
+            return False
+        if parse_result > 0:
+            ida_warning(
+                f"BromaIDA encountered {parse_result} error(s) while parsing the types file!\n"
+                "Please check the IDA Output Window for compilation details."
+            )
+            return False
 
         return VerifyUtils.verify_types_postimport(self._graph.stl_type_definitions)
 
