@@ -18,6 +18,7 @@ from ida_nalt import (
     get_imagebase, get_root_filename,
     retrieve_input_file_md5
 )
+from ida_pro import IDA_SDK_VERSION
 from ida_segment import (
     get_first_seg, get_segm_by_name,
     getseg, get_segm_name,
@@ -30,6 +31,9 @@ from broma_ida.broma.constants import BROMA_PLATFORMS
 class UnsupportedBinaryError(RuntimeError):
     pass
 
+
+# i don't like importing ida_pro just for this in some modules
+ENV_IDA_VERSION = IDA_SDK_VERSION
 
 # Mach-O Load commands
 _MINIMUM_OS_VERSION_LOAD_COMMAND = 0x32

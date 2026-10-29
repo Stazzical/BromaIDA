@@ -20,13 +20,7 @@ from ida_typeinf import (
     FAI_RETPTR
 )
 from ida_name import get_ea_name, GN_SHORT, GN_DEMANGLED
-from ida_pro import IDA_SDK_VERSION
 from idautils import Names
-from ida_dirtree import (
-    get_std_dirtree,
-    direntry_t as ida_direntry_t,
-    DIRTREE_LOCAL_TYPES
-)
 from ida_srclang import (
     parse_decls_with_parser,
     set_parser_argv,
@@ -43,20 +37,21 @@ from broma_ida.broma.binding import Binding
 from broma_ida.codegen.codegen import BromaCodegen
 from broma_ida.codegen.class_graph import STLStubDefinition, STLTypeDefinitions, ClassGraph
 from broma_ida.utils import (
-    path_exists,
+    path_exists, source_key,
     CppUtils, STLNode, STLUtils
 )
 from broma_ida.ida.env import (
     stop, get_binary_info, to_ea,
-    address_problem,
+    address_problem, ENV_IDA_VERSION,
     BinaryInfo
 )
 from broma_ida.ida.parser import (
     stl_headers_dir,
     parser_argv, resolve_parser
 )
+from broma_ida.ida import dirtree
 from broma_ida.ida_utils import (
-    IDAUtils, DirtreeEntry, TypeState
+    IDAUtils, TypeState
 )
 
 from broma_ida.data.data_manager import DataManager
@@ -181,22 +176,22 @@ class VerifyUtils:
             return True
 
         if not VerifyUtils.verify_stl_structs(defs):
-            if AskPopup(
+            choice = AskPopup(
                 "Mismatch from previously imported STL types!\n\n"
-                "It is recommended to cancel the current type import, "
-                "go to the 'Local Types' subview, delete the\n"
-                "'BromaIDA' dirtree (you might have to right-click -> Show folders), "
-                "and then save the IDB.\n\n"
-                "Continue to overwrite previous types anyway?",
-                "Overwrite", "Cancel",
+                "Overwrite the previous types, cancel the import, or delete\n"
+                "every type in the 'BromaIDA' dirtree folder first?",
+                "Overwrite", "Cancel", "Delete and Import",
                 icon="WARNING"
-            ).show() != ASKBTN_BTN1:
+            ).show()
+            if choice == ASKBTN_BTN3:
+                IDAUtils.delete_types(dirtree.root_types())
+            elif choice != ASKBTN_BTN1:
                 return False
 
         return True
 
     @staticmethod
-    def verify_types_postimport(defs: STLTypeDefinitions) -> bool:
+    def verify_types_postimport(defs: STLTypeDefinitions) -> str | None:
         """
         Verifies the existence of the imported STL structs
         and some sample Cocos2d-x types.
@@ -207,17 +202,11 @@ class VerifyUtils:
             defs (STLTypeDefinitions)
 
         Returns:
-            bool: True on success
+            str | None: What is wrong with the imported types,
+                or None if they are fine.
         """
         if not VerifyUtils.verify_stl_structs(defs, must_exist=True):
-            ida_warning(
-                "Faulty STL struct found when checking imported types!\n\n"
-                "It is recommended to go to the 'Local Types' subview, "
-                "delete the 'BromaIDA' dirtree\n"
-                "(you might have to right-click -> Show folders), "
-                "and then save the IDB before importing types again.\n\n"
-            )
-            return False
+            return "Faulty STL struct found when checking imported types!"
 
         if any((
             IDAUtils.get_type_state(t) is not TypeState.OK
@@ -226,16 +215,9 @@ class VerifyUtils:
                 "cocos2d::CCApplication", "cocos2d::CCDirector"
             )
         )):
-            ida_warning(
-                "Faulty struct found when checking imported types!\n\n"
-                "It is recommended to go to the 'Local Types' subview, "
-                "delete the 'BromaIDA' dirtree\n"
-                "(you might have to right-click -> Show folders), "
-                "and then save the IDB before importing types again.\n\n"
-            )
-            return False
+            return "Faulty struct found when checking imported types!"
 
-        return True
+        return None
 
 
 class BIUtils:
@@ -265,53 +247,6 @@ class BIUtils:
             BIUtils.prompt_invalid_dir(input_str, dm_key)
 
         DataManager().set(dm_key, dir_str)
-
-    @staticmethod
-    def move_type_entries_to_bromaida() -> None:
-        """Moves imported type entries to '/BromaIDA' in the Local Types tree."""
-        dirtree = get_std_dirtree(DIRTREE_LOCAL_TYPES)
-        entries = IDAUtils.get_dirtree_entries(
-            DIRTREE_LOCAL_TYPES, "/"
-        )
-        found_first = False
-
-        for _, path in entries:
-            if path in \
-                    ["/SearchType", "/cocos2d::CCNode", "/cocos2d::CCLayer"]:
-                found_first = True
-
-            if path.count("/") > 1 or not found_first:
-                continue
-
-            dirtree.rename(f"{path}", f"/BromaIDA{path}")
-
-            # this will add other entries added after imported types
-            # nothing much i can do abt that :/
-
-    @staticmethod
-    def dirtree_is_bromaida_entry(de: ida_direntry_t, ep: str) -> bool:
-        """
-        Predicate to check if a dirtree entry is in '/BromaIDA'.
-
-        Args:
-            de (ida_direntry_t)
-            ep (str)
-
-        Returns:
-            bool
-        """
-        return ep.startswith("/BromaIDA/")
-
-    @staticmethod
-    def delete_dirtree_entry(de: ida_direntry_t, ep: str) -> bool:
-        """
-        Deletes a dirtree entry.
-
-        Args:
-            de (ida_direntry_t)
-            ep (str)
-        """
-        return get_std_dirtree(DIRTREE_LOCAL_TYPES).unlink(ep) == 0x0
 
     @staticmethod
     def build_symbol_index() -> dict[str, list[int]]:
@@ -533,7 +468,7 @@ class BromaImporter:
     _binary: BinaryInfo
     _entry_path: Path
     _headers_path: Path
-    _imported_types: list[DirtreeEntry] = []
+    _types_before: set[str] | None = None
     _graph: ClassGraph
     _codegen: BromaCodegen
     _state: IDBState
@@ -632,7 +567,7 @@ class BromaImporter:
 
         for part in (
             header.read_bytes(),
-            f"{parser_name}@{IDA_SDK_VERSION}".encode(),
+            f"{parser_name}@{ENV_IDA_VERSION}".encode(),
             parser_argv(self._binary.profile.clang_args).encode(),
         ):
             h.update(len(part).to_bytes(8, "big"))
@@ -665,9 +600,10 @@ class BromaImporter:
             )
 
             if len(broma_class.fields) == 0:
+                bro_dir = source_key(broma_class.source, base=self._entry_path.resolve().parent)
                 print(
                     "[-] BromaImporter: Found empty class definition: "
-                    f"({broma_class.name} from {broma_class.source})"
+                    f"({broma_class.name} from {bro_dir})"
                 )
 
             for field in broma_class.fields:
@@ -701,7 +637,7 @@ class BromaImporter:
             self.classes[broma_class.name] = broma_class
 
     def _load_broma_bindings(self) -> None:
-        """Gather all the needed bindings from the Broma AST."""
+        """Gather the free functions' bindings from the Broma AST."""
         for func in self._root.functions:
             # check for missing attribute was moved to
             # import_into_idb for logging purposes
@@ -785,43 +721,45 @@ class BromaImporter:
             )
         )
 
+    def _type_folders(self) -> dict[str, str]:
+        base = self._entry_path.resolve().parent
+        folders = {}
+        for name, cls in self.classes.items():
+            key = source_key(cls.source, base=base, external_root="_external", strip_suffix=True)
+            folders[name] = f"{dirtree.ROOT_FOLDER}/{key}"
+        return folders
+
     def _pre_import_types(self) -> None:
         """Pre-import types hook"""
-        dirtree = get_std_dirtree(DIRTREE_LOCAL_TYPES)
-        self._imported_types = IDAUtils.get_dirtree_entries(dirtree, "/")
-
-        mkdir_ret = dirtree.mkdir("/BromaIDA")
-
-        for _, path in self._imported_types:
-            if path in \
-                    ["/SearchType", "/cocos2d::CCNode", "/cocos2d::CCLayer"]:
-                print("[+] BromaImporter: Moving existing types to '/BromaIDA'...")
-                BIUtils.move_type_entries_to_bromaida()
-                break
-
-        if mkdir_ret != 0:
-            IDAUtils.visit_dirtree(
-                dirtree,
-                BIUtils.dirtree_is_bromaida_entry,
-                BIUtils.delete_dirtree_entry
-            )
+        # for future reference: deleting all old BromaIDA types to
+        # create a "clean slate" can potentially mess up the IDB,
+        # and the procedure done by the STL stub verification
+        # is already a robust solution
+        # although, the plugin does run on main thread,
+        # which blocks IDA auto-analysis from repropagating types
+        # but the risk still remains.
+        self._types_before = dirtree.linked_type_names()
 
     def _post_import_types(self) -> None:
         """Post-import types hook"""
-        new_types = IDAUtils.get_dirtree_entries(
-            DIRTREE_LOCAL_TYPES, "/"
-        )
-        old_types_paths = [path for _, path in self._imported_types]
-        self._imported_types = []
+        # orphans can't be found by name in the tree, so restore them first
+        if adopted := dirtree.adopt_orphaned_types(IDAUtils.til_type_names()):
+            print(f"[-] BromaImporter: Restored {adopted} types that had lost their dirtree entry.")
 
-        # direntry_t is unhashable so we manually deduplicate
-        for _, path in new_types:
-            if path not in old_types_paths:
-                self._imported_types.append((_, path))
+        unplaced = dirtree.place_types(self._type_folders())
+        if unplaced:
+            print(
+                f"[-] BromaImporter: {len(unplaced)} Broma classes were not placed "
+                f"in the dirtree (e.g. {unplaced[0]})."
+            )
 
-        IDAUtils.chdir_dirtree_entries(
-            DIRTREE_LOCAL_TYPES, "/BromaIDA", self._imported_types
-        )
+        # no snapshot means the import was skipped, so there is nothing new to sweep
+        if self._types_before is not None:
+            swept = dirtree.sweep_new_types(self._types_before)
+            if swept:
+                print(f"[-] BromaImporter: Moved {swept} non-Broma types to '{dirtree.OTHER_FOLDER}'.")
+
+        self._types_before = None
 
     def __init__(
         self,
@@ -829,6 +767,8 @@ class BromaImporter:
         hdrpath: str | PathLike[str],
         bpath: str | PathLike[str]
     ):
+        # a docstring for a dunder method, genius
+        # maybe move to the class's own docstring
         """
         Initializes a BromaImporter instance.
 
@@ -897,6 +837,9 @@ class BromaImporter:
                         ).show()
                         import_types = False
                         self.has_types = True
+                        # IDBs from older versions might have types with no dirtree entry
+                        if dirtree.adopt_orphaned_types(IDAUtils.til_type_names()):
+                            dirtree.place_types(self._type_folders())
                     else:
                         print(
                             "[!] BromaImporter: Types digest matches but BromaIDA's types "
@@ -977,10 +920,19 @@ class BromaImporter:
             ).show() == ASKBTN_BTN1:
                 IDAUtils.rename_func(ea, name)
 
-    def import_types(self, types_file: Path, parser_name: str) -> bool:
+    def import_types(self, types_file: Path, parser_name: str, retried: bool = False) -> bool:
         """
         Parse the generated BromaCodegen header file using
         the provided `parser_name` source parser through IDA.
+
+        Args:
+            types_file (Path): Path instance to the
+                BromaCodegen generated types file.
+            parser_name (str): Name of the source
+                parser to use from IDA.
+            retried (bool, optional):
+                If this is a secondary attempt to import.
+                Defaults to False.
 
         Returns:
             bool: Value that VerifyUtils.verify_types_postimport
@@ -1004,11 +956,13 @@ class BromaImporter:
 
         with WaitBox("Importing types..."):
             self._pre_import_types()
-            parse_result = parse_decls_with_parser(parser_name, None, types_file.as_posix(), True)
+            parse_result = parse_decls_with_parser(
+                parser_name, None, types_file.as_posix(), True
+            )
 
         if parse_result == -1:
             ida_warning(
-                "BromaIDA was unable to find the parser for the generated types file!"
+                f"BromaIDA was unable to use the source parser '{parser_name}' to parse types!"
                 "\nTypes are not imported!"
             )
             return False
@@ -1019,7 +973,31 @@ class BromaImporter:
             )
             return False
 
-        return VerifyUtils.verify_types_postimport(self._graph.stl_type_definitions)
+        problem = VerifyUtils.verify_types_postimport(self._graph.stl_type_definitions)
+        if problem is None:
+            return True
+
+        self._post_import_types()
+
+        if not retried and AskPopup(
+            f"{problem}\n\n"
+            "Would you like to delete every type in the\n"
+            "'BromaIDA' dirtree folder from this IDB\n"
+            "and try to import types again?",
+            "Delete and Re-import", "Keep",
+            icon="WARNING"
+        ).show() == ASKBTN_BTN1:
+            deleted = IDAUtils.delete_types(dirtree.root_types())
+            print(f"[-] BromaImporter: Deleted {deleted} BromaIDA types from local types.")
+            print(f"[-] BromaImporter: Attempting to import types again...")
+            return self.import_types(types_file, parser_name, retried=True)
+
+        ida_warning(
+            f"{problem}\n\n"
+            "Please check the integrity of your Broma file,\n"
+            "or create an issue on GitHub if the problem persists."
+        )
+        return False
 
     def import_into_idb(self) -> None:
         """
@@ -1171,8 +1149,7 @@ class BromaImporter:
                     continue
 
                 # we're gonna be setting it anyway
-                # so let's do it now to see if IDA's
-                # truncated it
+                # so let's do it now to see if IDA's truncated it
                 set_func_cmt(ea_func, f"Merged with: {func_names}", True)
 
                 new_cmt = (get_func_cmt(ea_func, True) or "").removeprefix("Merged with: ")
@@ -1282,7 +1259,7 @@ class BromaImporter:
         """
         self._headers_path = Path()
         self._entry_path = Path()
-        self._imported_types = []
+        self._types_before = None
 
         IDAUtils.resolve_type_tinfo.cache_clear()
         self.has_types = False

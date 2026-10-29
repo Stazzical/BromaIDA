@@ -1,7 +1,8 @@
-from typing import Final
+from dataclasses import dataclass, field
+from os import PathLike
 from pathlib import Path
 from re import sub, compile
-from dataclasses import dataclass, field
+from typing import Final
 
 
 def path_exists(path: str, ext: str = "") -> bool:
@@ -24,6 +25,50 @@ def path_exists(path: str, ext: str = "") -> bool:
         p_path = Path(path)
 
         return p_path.suffix == ext and p_path.exists()
+
+
+def source_key(
+    source: str | PathLike[str],
+    *,
+    base: Path | None = None,
+    external_root: str = "",
+    strip_suffix: bool = False,
+) -> str:
+    """
+    Produce a unique collision-resistant key for a source file.
+
+    - If the file lives under `base`, return the relative path.
+    - Otherwise return the full POSIX path string, or park it under
+     `external_root` if provided using a sanitized absolute path
+     so two different absolute locations can never collide.
+    - Optionally strip the final suffix if `strip_suffix` is `True`.
+    """
+    p = Path(source).resolve()
+
+    rel: Path | None = None
+    if base is not None:
+        try:
+            rel = p.relative_to(base.resolve())
+        except ValueError:
+            pass
+
+    if rel is None:
+        if not external_root:
+            rel = p
+        else:
+            parts = [external_root]
+            # "C:" -> "C", r"\\server\share" -> "server_share"
+            parts.append(sub(r"\W+", "_", p.drive).strip("_"))
+
+            # body after the anchor
+            body = p.relative_to(p.anchor) if p.anchor else p
+            parts.extend(body.parts)
+            rel = Path(*parts)
+
+    if strip_suffix:
+        rel = rel.with_suffix("")
+
+    return rel.as_posix()
 
 
 class CppUtils:
