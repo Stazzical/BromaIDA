@@ -435,13 +435,11 @@ class SymbolIndex:
     name (arguments stripped) so overloads share one key.
     """
 
-    _KEY_RE: Final = compile(r"(\S+)::(\S+)\(.*\)")
-
     def __init__(self) -> None:
         self._by_name: dict[str, list[int]] = defaultdict(list)
         for ea, _ in Names():
-            name = get_ea_name(ea, GN_SHORT | GN_DEMANGLED)
-            self._by_name[self._KEY_RE.sub(r"\1::\2", name)].append(ea)
+            demangled = get_ea_name(ea, GN_SHORT | GN_DEMANGLED)
+            self._by_name[CppUtils.split_signature(demangled)[0]].append(ea)
 
     def candidates(self, name: str) -> list[int]:
         """Addresses still unclaimed under `name` (a copy)."""
