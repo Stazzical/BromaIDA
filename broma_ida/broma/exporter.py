@@ -1,6 +1,11 @@
 from typing import cast, Generator, Any
 from os import path
-from re import search, match, sub, findall, Match
+from re import (
+    sub,
+    search, findall,
+    match, fullmatch,
+    Match
+)
 from shutil import move
 
 from ida_nalt import get_imagebase
@@ -11,8 +16,8 @@ from broma_ida.broma.constants import (
 )
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.argtype import ArgType, RetType
-from broma_ida.ida_utils import IDAUtils
 from broma_ida.ida.parser import resolve_parser
+from broma_ida.ida.functions import read_function_signature
 
 from broma_ida.data.data_manager import DataManager
 
@@ -243,7 +248,7 @@ class BromaExporter:
 
             # pX is Broma auto-generated name, aX is IDA auto-generated name
             names_differ = any((
-                match(r"(p|a)([0-9]+)", p.name) is None and
+                fullmatch(r"(p|a)([0-9]+)", p.name) is None and
                 p.name != broma_args[i].name
                 for i, p in enumerate(binding.parameters)
                 if i > 0 or binding.is_static
@@ -394,7 +399,7 @@ class BromaExporter:
             if base_name[:1] in ("d", "~") and base_name[1:] == class_name:
                 base_name = f"~{class_name}"
 
-            signature = IDAUtils.read_function_signature(ea)
+            signature = read_function_signature(ea)
             if signature is None:
                 continue
 

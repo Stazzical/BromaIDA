@@ -279,9 +279,28 @@ class STLNode:
     args: list["STLNode"] = field(default_factory=list)
     ptr: str = ""
 
+    @classmethod
+    def parse(cls, type_str: str) -> "STLNode":
+        """Builds a node tree from a raw type string, normalizing it first."""
+        return STLUtils.split_stl_type(CppUtils.normalize_type(type_str))
+
     @property
     def is_stl(self) -> bool:
         return "std::" in self.name
+
+    @property
+    def ida_sanitized(self) -> "STLNode":
+        """Copy of this tree spelled the way IDA sees it (refs as pointers, no `geode::`)."""
+        return STLNode(
+            self.const,
+            CppUtils.to_ida_equivalent(self.name),
+            [a.ida_sanitized for a in self.args],
+            CppUtils.to_ida_equivalent(self.ptr),
+        )
+
+    def __str__(self) -> str:
+        args = f"<{', '.join(map(str, self.args))}>" if self.args else ""
+        return f"{self.const} {self.name}{args}{self.ptr}".lstrip()
 
 
 class STLUtils:

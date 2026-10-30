@@ -57,14 +57,15 @@ class PlatformProfile:
     stl_dir: str
     itanium_abi: bool
     instruction_alignment: int = 1
+    reg_return_sizes: frozenset[int] = frozenset(range(1, 17))
 
 
 PLATFORM_PROFILES: dict[BROMA_PLATFORMS, PlatformProfile] = {
-    "win":          PlatformProfile("Windows", (6, 12), "-target x86_64-pc-win32", "windows", itanium_abi=False),
+    "win":          PlatformProfile("Windows", (6, 12), "-target x86_64-pc-win32", "windows", itanium_abi=False, reg_return_sizes=frozenset({1, 2, 4, 8})),
     "imac":         PlatformProfile("Intel MacOS", (12,), "-target x86_64-apple-darwin", "macho", itanium_abi=True),
     "m1":           PlatformProfile("M1 MacOS", (12,), "-target arm64-apple-darwin", "macho", itanium_abi=True, instruction_alignment=4),
     "ios":          PlatformProfile("iOS", (12,), "-target arm64-apple-darwin", "macho", itanium_abi=True, instruction_alignment=4),
-    "android32":    PlatformProfile("Android (32-bit)", (12,), "-target armv7-none-linux-androideabi", "android", itanium_abi=True, instruction_alignment=2),
+    "android32":    PlatformProfile("Android (32-bit)", (12,), "-target armv7-none-linux-androideabi", "android", itanium_abi=True, instruction_alignment=2, reg_return_sizes=frozenset(range(1, 5))),
     "android64":    PlatformProfile("Android (64-bit)", (16,), "-target aarch64-none-linux-android", "android", itanium_abi=True, instruction_alignment=4)
 }
 
