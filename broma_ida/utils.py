@@ -4,6 +4,8 @@ from pathlib import Path
 from re import sub, compile
 from typing import Final
 
+from broma_ida.constants import CALLING_CONVENTIONS
+
 
 def path_exists(path: str, ext: str = "") -> bool:
     """
@@ -79,16 +81,10 @@ class CppUtils:
 
     _BAD_DECORATOR_RE: Final = compile(r"[*&]\s*<")
 
-    _CALL_CONVS: Final = (
-        "__cdecl", "__stdcall", "__pascal", "__fastcall", "__thiscall",
-        "__golang", "__usercall", "__userpurge"
-    )
-    """Calling convention names as IDA prints them in declarations."""
-
-    _CALL_CONV_RE: Final = compile(rf"\b(?:{'|'.join(_CALL_CONVS)})\b")
+    _CALL_CONV_RE: Final = compile(rf"\b(?:{'|'.join(CALLING_CONVENTIONS)})\b")
 
     _DECL_NOISE_RE: Final = compile(
-        rf"\b(?:{'|'.join((*_CALL_CONVS, '__noreturn', '__pure'))})\b"
+        rf"\b(?:{'|'.join((*CALLING_CONVENTIONS, '__noreturn', '__pure'))})\b"
     )
     """Everything IDA puts between the return type and the argument list."""
 
@@ -125,7 +121,7 @@ class CppUtils:
         - east `const` moved to west position
         - pointer/reference attached to type with no spaces
         - whitespace cleaned up with one space after each
-            templated type argument
+         templated type argument
 
         Args:
             t (str)

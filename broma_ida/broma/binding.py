@@ -9,7 +9,7 @@ from pybroma import (
 )
 
 from broma_ida.broma.argtype import ArgType, RetType
-from broma_ida.broma.constants import BROMA_PLATFORMS
+from broma_ida.constants import BROMA_PLATFORMS
 
 
 @dataclass

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 import re
 
-from broma_ida.broma.constants import CPP_TYPE_QUALIFIERS, CPP_TYPE_SPECIFIERS, CPP_PRIMITIVES
+from broma_ida.constants import CPP_TYPE_QUALIFIERS, CPP_TYPE_SPECIFIERS, CPP_PRIMITIVES
 
 from broma_ida.utils import CppUtils, STLNode, STLUtils
 

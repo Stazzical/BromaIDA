@@ -5,7 +5,7 @@ from pybroma import Class
 
 from broma_ida.data.data_manager import DataManager
 from broma_ida.broma.binding import FunctionSignature
-from broma_ida.broma.constants import BROMA_PLATFORMS
+from broma_ida.constants import BROMA_PLATFORMS
 from broma_ida.utils import CppUtils, STLUtils
 
 

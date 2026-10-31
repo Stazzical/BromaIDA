@@ -1,4 +1,3 @@
-from typing import cast, Generator, Any
 from os import path
 from re import (
     sub,
@@ -7,15 +6,14 @@ from re import (
     Match
 )
 from shutil import move
+from typing import cast, Generator, Any
 
-from ida_nalt import get_imagebase
 from ida_kernwin import ASKBTN_BTN1
 
-from broma_ida.broma.constants import (
-    BROMA_PLATFORMS
-)
+from broma_ida.constants import BROMA_PLATFORMS
 from broma_ida.broma.binding import Binding
 from broma_ida.broma.argtype import ArgType, RetType
+from broma_ida.ida.env import to_rva
 from broma_ida.ida.parser import resolve_parser
 from broma_ida.ida.functions import read_function_signature
 
@@ -419,7 +417,7 @@ class BromaExporter:
                 # check if first argument is ClassName*
                 # because func_type_data_t.is_static is always False :D
                 is_static=not (args and args[0] == f"{class_name}*"),
-                address=ea - get_imagebase()
+                address=to_rva(ea)
             )
 
             if overload is None:

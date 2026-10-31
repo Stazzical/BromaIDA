@@ -8,7 +8,7 @@ from pybroma import Class
 
 from broma_ida.metadata import __version__, PLUGIN_NAME
 from broma_ida.codegen.class_graph import ClassGraph
-from broma_ida.broma.constants import BROMA_PLATFORMS
+from broma_ida.constants import BROMA_PLATFORMS
 from broma_ida.codegen.class_builder import ClassBuilder
 from broma_ida.utils import CppUtils
 from broma_ida.ida.env import BinaryInfo
