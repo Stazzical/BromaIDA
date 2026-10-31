@@ -127,7 +127,7 @@ def can_return_in_registers(tif: ida_tinfo_t) -> bool:
         from ida_typeinf import calc_retloc
         retloc = ida_argloc_t()
         if calc_retloc(retloc, tif, inf_get_cc_cm() & CM_CC_MASK):
-            return retloc.is_reg1() or retloc.is_reg2()
+            return retloc.has_reg() and not retloc.has_stkoff()
     except ImportError:
         pass
 
