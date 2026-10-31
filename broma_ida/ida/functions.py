@@ -153,12 +153,15 @@ class SignatureApplier:
     and applying correct signatures.
     """
 
+    checked: int = 0
+    applied: int = 0
+    failed: int = 0
+
     DERIVED_FTI = FTI_CTOR | FTI_DTOR | FTI_STATIC | FTI_VIRTUAL | FTI_CONST
     """Function flags that can be derived from Broma."""
 
     def __init__(self, known_nontrivials: Iterable[str] = ()) -> None:
         self._known_nontrivials = frozenset(known_nontrivials)
-        self.checked = self.applied = self.failed = 0
 
     def ensure(self, ea: int, binding, context: str = "") -> bool:
         """

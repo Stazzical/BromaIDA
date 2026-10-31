@@ -25,7 +25,7 @@ from ida_segment import (
     SEG_CODE, SEGPERM_EXEC
 )
 
-from broma_ida.broma.constants import BROMA_PLATFORMS
+from broma_ida.constants import BROMA_PLATFORMS
 
 
 class UnsupportedBinaryError(RuntimeError):
