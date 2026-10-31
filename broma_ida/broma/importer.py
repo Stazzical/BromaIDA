@@ -668,39 +668,41 @@ class BromaImporter:
         )
 
     @staticmethod
-    def safe_rename_function(ea: int, ida_name: str, name: str):
+    def safe_rename_function(ea: int, ida_name: str, name: str) -> None:
         """
         Ensures user consent and checks if current function name
         is generic before renaming a function.
         """
-        renamed: bool = False
-        if ida_name.startswith("sub_"):
-            renamed = rename_function(ea, name)
-        elif ida_name != name and sub(r"_[0-9]+$", "", ida_name) != name:
-            if DataManager().get("always_overwrite_idb") or \
-                AskPopup(
-                    f"Mismatch between Broma ({name}) "
-                    f"and IDB ({ida_name})!\n"
-                    "Overwrite from Broma or keep current name?",
-                    "Overwrite", "Keep",
-                    icon="WARNING"
-            ).show() == ASKBTN_BTN1:
-                renamed = rename_function(ea, name)
+        # already named for this binding, overload suffix is fine
+        if ida_name == name or sub(r"_[0-9]+$", "", ida_name) == name:
+            return
 
-        if not renamed:
-            owner = name_owner(name, ea)
-            if owner != BADADDR and AskPopup(
-                f"{name} is already taken at "
-                f"{hex(to_rva(owner))} while trying to "
-                f"rename {hex(ea)}\n"
-                "Overwrite or keep current name?\n"
-                "(Old location will be renamed to "
-                f"sub_{hex(owner)[2:].upper()})",
-                "Overwrite", "Keep",
-                icon="WARNING"
-            ).show() == ASKBTN_BTN1:
-                set_name(owner, "", SN_NOWARN)
-                set_name(ea, name, SN_NOWARN)
+        if not ida_name.startswith("sub_") and not (
+            DataManager().get("always_overwrite_idb") or AskPopup(
+                f"Mismatch between Broma ({name}) and IDB ({ida_name})!\n"
+                "Overwrite from Broma or keep current name?",
+                "Overwrite", "Keep", icon="WARNING"
+            ).show() == ASKBTN_BTN1
+        ):
+            return
+
+        if rename_function(ea, name):
+            return
+
+        # failed rename branch
+        owner = name_owner(name, ea)
+        if owner != BADADDR and AskPopup(
+            f"{name} is already taken at "
+            f"{hex(to_rva(owner))} while trying to "
+            f"rename {hex(ea)}\n"
+            "Overwrite or keep current name?\n"
+            "(Old location will be renamed to "
+            f"sub_{hex(owner)[2:].upper()})",
+            "Overwrite", "Keep",
+            icon="WARNING"
+        ).show() == ASKBTN_BTN1:
+            set_name(owner, "", SN_NOWARN)
+            set_name(ea, name, SN_NOWARN)
 
     def import_types(self, types_file: Path, parser_name: str, retried: bool = False) -> bool:
         """
