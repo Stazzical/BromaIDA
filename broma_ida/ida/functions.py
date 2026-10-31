@@ -1,7 +1,7 @@
 from collections import defaultdict
 from enum import IntEnum
 from re import compile, fullmatch
-from typing import Iterable, Final
+from typing import Iterable
 
 from ida_idaapi import BADADDR
 from ida_name import (
@@ -22,6 +22,9 @@ from ida_typeinf import (
     PRTYPE_1LINE,
     TINFO_DEFINITE, CM_CC_MASK,
     FAI_RETPTR, FAI_STRUCT,
+    FTI_NORET, FTI_PURE,
+    FTI_CTOR, FTI_DTOR,
+    FTI_STATIC, FTI_VIRTUAL, FTI_CONST,
     CM_CC_INVALID, CM_CC_UNKNOWN, CM_CC_VOIDARG,
     CM_CC_CDECL, CM_CC_ELLIPSIS, CM_CC_STDCALL,
     CM_CC_FASTCALL, CM_CC_THISCALL, CM_CC_SPECIAL,
@@ -59,29 +62,29 @@ class CallingConvention(IntEnum):
     # NOT A BITMASK !!
     """Calling conventions enum for IDA's `cm_t` type."""
 
-    invalid = CM_CC_INVALID     # = 0x00
+    INVALID = CM_CC_INVALID     # = 0x00
     """Invalid calling convention"""
-    unknown = CM_CC_UNKNOWN     # = 0x10
+    UNKNOWN = CM_CC_UNKNOWN     # = 0x10
     """Unknown calling convention."""
-    voidarg = CM_CC_VOIDARG     # = 0x20
+    VOIDARG = CM_CC_VOIDARG     # = 0x20
     """
     Represents an empty function prototype 'func()'
     with a valid calling convention and 0 real arguments.
     """
-    cdecl = CM_CC_CDECL         # = 0x30
+    CDECL = CM_CC_CDECL         # = 0x30
     """__cdecl"""
-    ellipsis = CM_CC_ELLIPSIS   # = 0x40
+    ELLIPSIS = CM_CC_ELLIPSIS   # = 0x40
     """
     Calling convention for variadic functions.
     Handled internally by IDA between different architectures and bitnesses.
     """
-    stdcall = CM_CC_STDCALL     # = 0x50
+    STDCALL = CM_CC_STDCALL     # = 0x50
     """__stdcall, only relevant on 32-bit."""
-    fastcall = CM_CC_FASTCALL   # = 0x70
+    FASTCALL = CM_CC_FASTCALL   # = 0x70
     """__fastcall, only relevant on 32-bit."""
-    thiscall = CM_CC_THISCALL   # = 0x80
+    THISCALL = CM_CC_THISCALL   # = 0x80
     """__thiscall, only relevant on 32-bit."""
-    special = CM_CC_SPECIAL     # = 0xF0
+    SPECIAL = CM_CC_SPECIAL     # = 0xF0
     """
     IDA's bitmask for user-defined calling conventions,
     AKA "__usercall".
@@ -122,13 +125,12 @@ def can_return_in_registers(tif: ida_tinfo_t) -> bool:
     """
     try:
         from ida_typeinf import calc_retloc
-    except ImportError:
-        calc_retloc = None
-
-    if calc_retloc is not None:
         retloc = ida_argloc_t()
         if calc_retloc(retloc, tif, inf_get_cc_cm() & CM_CC_MASK):
             return retloc.is_reg1() or retloc.is_reg2()
+    except ImportError:
+        pass
+
     return tif.get_size() in get_binary_info().profile.reg_return_sizes
 
 
@@ -139,7 +141,7 @@ def resolve_calling_convention(existing_cc: int, is_variadic: bool) -> int:
 
     cc = TO_VARARG.get(existing_cc)
     if cc is None:
-        # fastcall/thiscall/stdcall can't be combined with an ellipsis in cm_t\
+        # fastcall/thiscall/stdcall can't be combined with an ellipsis in cm_t
         return existing_cc
 
     return cc
@@ -150,6 +152,9 @@ class SignatureApplier:
     Used for checking functions against IDA
     and applying correct signatures.
     """
+
+    DERIVED_FTI = FTI_CTOR | FTI_DTOR | FTI_STATIC | FTI_VIRTUAL | FTI_CONST
+    """Function flags that can be derived from Broma."""
 
     def __init__(self, known_nontrivials: Iterable[str] = ()) -> None:
         self._known_nontrivials = frozenset(known_nontrivials)
@@ -187,6 +192,24 @@ class SignatureApplier:
             f"{self.failed} failed ({self.checked} checked)."
         )
 
+    @staticmethod
+    def derived_flags(binding) -> int:
+        # future reference: FTI_HIGH isn't useful for our purpose,
+        # because we reconstruct a low-level prototype with explicit
+        # `this` and `__return_ptr` arguments
+        flags = 0
+        if binding.is_ctor:
+            flags |= FTI_CTOR
+        elif binding.is_dtor:
+            flags |= FTI_DTOR
+        if binding.is_static:
+            flags |= FTI_STATIC
+        if binding.is_virtual:
+            flags |= FTI_VIRTUAL
+        if binding.is_const:
+            flags |= FTI_CONST
+        return flags
+
     def has_mismatch(self, function, binding) -> bool:
         """
         Checks if there is a mismatch between the IDB and a binding.
@@ -205,7 +228,11 @@ class SignatureApplier:
         if function is None:
             return True
 
-        if (function.get_cc() in VARARG_CCS) != binding.is_variadic:
+        want_variadic = binding.is_variadic and function.get_cc() in TO_VARARG
+        if (function.get_cc() in VARARG_CCS) != want_variadic:
+            return True
+
+        if (function.flags & self.DERIVED_FTI) != self.derived_flags(binding):
             return True
 
         expected_rettype = function.rettype
@@ -243,6 +270,9 @@ class SignatureApplier:
             this_tinfo = resolve_type_tinfo(
                 ArgType.for_this(binding.class_name)
             )
+
+            if this_tinfo is None:
+                return True
 
             # trigger mismatch if the name is auto-generated by IDA
             type_matches = this_arg.type.equals_to(this_tinfo)
@@ -289,11 +319,14 @@ class SignatureApplier:
         retptr_entry: tuple[str, ida_tinfo_t, int] | None = None
         existing_info = None
 
+        ret = binding.ida_rettype
         existing_info = get_function_info(ea)
-        existing_cc = existing_info.get_cc() if existing_info is not None else CM_CC_UNKNOWN
+        # if there'll ever be custom calling convention definitions
+        # used by bromaida, calc_arglocs might be needed (?)
+        existing_cc = existing_info.get_cc() if existing_info is not None else CallingConvention.UNKNOWN
 
         # process the return type, decide if we need a __return_ptr argument applied
-        if binding.ret.is_unknown:
+        if ret.is_unknown:
             # keep whatever IDA currently guessed
             final_rettype = (
                 existing_info.rettype if existing_info is not None
@@ -308,16 +341,16 @@ class SignatureApplier:
 
             needs_retptr = retptr_entry is not None
         else:
-            resolved_ret = resolve_type_tinfo(binding.ret)
+            resolved_ret = resolve_type_tinfo(ret)
             if resolved_ret is None:
                 print(
                     "[!] IDAUtils: Couldn't resolve return type "
-                    f"'{binding.ret.type}' for function at {hex(ea)}!"
+                    f"'{ret.type}' for function at {hex(ea)}!"
                 )
                 return False
 
             final_rettype = resolved_ret
-            needs_retptr = self._needs_retptr(binding.ret, resolved_ret)
+            needs_retptr = self._needs_retptr(ret, resolved_ret)
 
             if needs_retptr:
                 retptr_tinfo = ida_tinfo_t()
@@ -366,10 +399,12 @@ class SignatureApplier:
         ordered.extend(resolved_args)
 
         function_data = ida_func_type_data_t()
+        function_data.flags |= self.derived_flags(binding)
+        if existing_info is not None:
+            # can't get these from broma, derive from IDA itself
+            function_data.flags |= existing_info.flags & (FTI_NORET | FTI_PURE)
         function_data.set_cc(resolve_calling_convention(existing_cc, binding.is_variadic))
         function_data.rettype = final_rettype
-        if binding.is_variadic:
-            function_data.set_cc(CallingConvention.ellipsis)
 
         for name, tinfo, flags in ordered:
             funcarg = ida_funcarg_t()
