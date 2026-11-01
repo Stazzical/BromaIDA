@@ -37,7 +37,7 @@ from ida_ida import inf_get_cc_cm
 from idautils import Names
 
 from broma_ida.utils import CppUtils
-from broma_ida.broma.argtype import ArgType, RetType
+from broma_ida.models.argtype import ArgType, RetType
 from broma_ida.ida.env import get_binary_info
 from broma_ida.ida.type_library import (
     resolve_type_tinfo, resolve_bare_type,

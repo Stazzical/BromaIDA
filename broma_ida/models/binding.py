@@ -8,7 +8,7 @@ from pybroma import (
     OffsetStatus
 )
 
-from broma_ida.broma.argtype import ArgType, RetType
+from broma_ida.models.argtype import ArgType, RetType
 from broma_ida.constants import BROMA_PLATFORMS
 
 

@@ -31,7 +31,7 @@ from pybroma import (
     FunctionBindField
 )
 
-from broma_ida.broma.binding import Binding
+from broma_ida.models.binding import Binding
 from broma_ida.codegen.codegen import BromaCodegen
 from broma_ida.codegen.class_graph import STLStubDefinition, STLTypeDefinitions, ClassGraph
 from broma_ida.utils import (

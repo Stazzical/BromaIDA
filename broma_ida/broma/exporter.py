@@ -11,8 +11,8 @@ from typing import cast, Generator, Any
 from ida_kernwin import ASKBTN_BTN1
 
 from broma_ida.constants import BROMA_PLATFORMS
-from broma_ida.broma.binding import Binding
-from broma_ida.broma.argtype import ArgType, RetType
+from broma_ida.models.argtype import ArgType, RetType
+from broma_ida.models.binding import Binding
 from broma_ida.ida.env import to_rva
 from broma_ida.ida.parser import resolve_parser
 from broma_ida.ida.functions import read_function_signature

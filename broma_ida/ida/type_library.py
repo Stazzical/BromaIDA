@@ -21,7 +21,7 @@ from broma_ida.ida import dirtree
 from broma_ida.utils import STLNode, STLUtils
 
 if TYPE_CHECKING:
-    from broma_ida.broma.argtype import ArgType
+    from broma_ida.models.argtype import ArgType
 
 
 _CLASS_NAME_RE = compile(r"^[A-Za-z_]\w*(::[A-Za-z_]\w*)*$")
