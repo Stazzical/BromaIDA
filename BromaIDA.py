@@ -147,7 +147,7 @@ def on_import(form: MainForm, code: int = 0):
             SimplePopup("Please select a valid .bro file!", "OK").show()
             stop()
 
-        headers_path = Path(__file__).resolve().parent / "broma_ida" / "types"
+        headers_path = Path(__file__).resolve().parent / "broma_ida" / "headers"
         entry_path = Path(entry)
 
         broma_importer = BromaImporter(binfo, headers_path, entry_path)

@@ -95,4 +95,4 @@ def stl_headers_dir(stl_dir: str, headers_root: Path) -> Path:
     Returns:
         Path
     """
-    return headers_root / "c++stl" / stl_dir
+    return headers_root / "cxx-stl" / stl_dir
