@@ -187,7 +187,7 @@ def resolve_type_tinfo(arg: "ArgType") -> ida_tinfo_t | None:
     # create_func accepts these but the result is is_correct() == False
     if base.is_forward_decl() and not by_ref:
         print(
-            "[!] IDAUtils: Can't use forward-declared type "
+            "[!] BromaIDA: Can't use forward-declared type "
             f"'{bare_name}' by value!")
         return None
 

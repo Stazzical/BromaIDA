@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 from enum import IntEnum
 from re import compile, fullmatch
 from typing import Iterable
@@ -36,6 +36,7 @@ from ida_nalt import (
 from ida_ida import inf_get_cc_cm
 from idautils import Names
 
+from broma_ida.data.data_manager import DataManager
 from broma_ida.utils import CppUtils
 from broma_ida.models.argtype import ArgType, RetType
 from broma_ida.ida.env import get_binary_info
@@ -47,15 +48,22 @@ from broma_ida.ida.type_library import (
 
 
 AUTO_NAME_RE = compile(r"[pa]\d+")
+"""
+Regular expression for auto-generated function parameter names.
+pX is Broma auto-generated name, aX is IDA auto-generated name
+"""
 
 VARARG_CCS = (CM_CC_ELLIPSIS, CM_CC_SPECIALE)
+"""Variadic calling conventions in IDA."""
 
 TO_VARARG = {
     CM_CC_UNKNOWN: CM_CC_ELLIPSIS, CM_CC_VOIDARG: CM_CC_ELLIPSIS,
     CM_CC_CDECL: CM_CC_ELLIPSIS, CM_CC_ELLIPSIS: CM_CC_ELLIPSIS,
     CM_CC_SPECIAL: CM_CC_SPECIALE, CM_CC_SPECIALE: CM_CC_SPECIALE,
 }
+"""Map of common calling conventions to their variadic counterpart."""
 FROM_VARARG = {CM_CC_ELLIPSIS: CM_CC_CDECL, CM_CC_SPECIALE: CM_CC_SPECIAL}
+"""Reverse of variadic calling conventions to regular ones."""
 
 
 class CallingConvention(IntEnum):
@@ -153,15 +161,23 @@ class SignatureApplier:
     and applying correct signatures.
     """
 
+    _known_nontrivials: frozenset
+
     checked: int = 0
     applied: int = 0
     failed: int = 0
+    reasons: Counter[str]
+    examples: dict[str, list[str]]
 
     DERIVED_FTI = FTI_CTOR | FTI_DTOR | FTI_STATIC | FTI_VIRTUAL | FTI_CONST
     """Function flags that can be derived from Broma."""
 
     def __init__(self, known_nontrivials: Iterable[str] = ()) -> None:
         self._known_nontrivials = frozenset(known_nontrivials)
+
+        # counter is pretty cool, it has .most_common
+        self.reasons: Counter[str] = Counter()
+        self.examples: dict[str, list[str]] = defaultdict(list)
 
     def ensure(self, ea: int, binding, context: str = "") -> bool:
         """
@@ -177,15 +193,22 @@ class SignatureApplier:
             bool
         """
         self.checked += 1
-        if not self.has_mismatch(get_function_info(ea), binding):
+        reason = self.has_mismatch(get_function_info(ea), binding)
+        if not reason:
             return True
+
+        label = reason.split(" (", 1)[0]
+        self.reasons[label] += 1
+        if len(self.examples[label]) < 3:
+            self.examples[label].append(f"{ea:#x} {binding.qualified_name}: {reason}")
 
         if self.apply(ea, binding):
             self.applied += 1
             return True
 
         self.failed += 1
-        print(f"[!] SignatureApplier: Failed to fix signature for '{binding.qualified_name}' ({context})!")
+        where = f" ({context})" if context else ""
+        print(f"[!] SignatureApplier: Failed to fix signature for '{binding.qualified_name}'{where}!")
         return False
 
     def print_summary(self) -> None:
@@ -194,6 +217,18 @@ class SignatureApplier:
             f"[+] SignatureApplier: {self.applied} applied, {matched} already matched, "
             f"{self.failed} failed ({self.checked} checked)."
         )
+
+        if self.reasons and DataManager().get("debug_info"):
+            top_item = self.reasons.most_common(1)
+            max_count_val = top_item[0][1] if top_item else 0
+            width = max(5, len(str(max_count_val)))
+
+            print("[-] DEBUG SignatureApplier: Mismatched functions report:")
+            for label, count in self.reasons.most_common():
+                # ':>' right-aligns the spaces based on `width`
+                print(f"    {count:>{width}} x {label}")
+                for example in self.examples[label]:
+                    print(f"          {example}")
 
     @staticmethod
     def derived_flags(binding) -> int:
@@ -213,7 +248,7 @@ class SignatureApplier:
             flags |= FTI_CONST
         return flags
 
-    def has_mismatch(self, function, binding) -> bool:
+    def has_mismatch(self, function, binding) -> str | None:
         """
         Checks if there is a mismatch between the IDB and a binding.
 
@@ -223,20 +258,26 @@ class SignatureApplier:
             binding (Binding): The binding.
 
         Returns:
-            bool: True if mismatch exists between either the
-                return type or the parameters.
+            str | None: Reason for mismatch, or None
+                if there is no mismatch.
         """
         needs_retptr: bool = False
 
         if function is None:
-            return True
+            return "no type info"
 
         want_variadic = binding.is_variadic and function.get_cc() in TO_VARARG
         if (function.get_cc() in VARARG_CCS) != want_variadic:
-            return True
+            # ':' is start of f-string format specification
+            # '#' appends '0x' to int
+            # 'x' prints int in hex format
+            return f"variadic (IDA cc {function.get_cc():#x}, binding variadic={binding.is_variadic})"
 
         if (function.flags & self.DERIVED_FTI) != self.derived_flags(binding):
-            return True
+            return (
+                f"flags (IDA {function.flags & self.DERIVED_FTI:#x}, "
+                f"expected {self.derived_flags(binding):#x})"
+            )
 
         expected_rettype = function.rettype
         funcargs = list(function)
@@ -254,20 +295,20 @@ class SignatureApplier:
 
             if expected_rettype is not None and \
                     not same_declared_type(function.rettype, expected_rettype):
-                return True
+                return f"rettype (IDA '{function.rettype}' vs expected '{expected_rettype}')"
 
         itanium_abi = get_binary_info().profile.itanium_abi
 
         if needs_retptr and itanium_abi:
             if not funcargs or not funcargs[0].type.equals_to(expected_rettype) \
                     or not (funcargs[0].flags & FAI_RETPTR):
-                return True
+                return "retptr missing"
             funcargs = funcargs[1:]
 
         # check if a 'ClassName* this' argument would be passed to the function
         if binding.class_name != "" and not binding.is_static:
             if not funcargs:
-                return True
+                return "'this' parameter missing"
 
             this_arg = funcargs[0]
             this_tinfo = resolve_type_tinfo(
@@ -275,33 +316,35 @@ class SignatureApplier:
             )
 
             if this_tinfo is None:
-                return True
+                return "'this' parameter unresolved"
 
             # trigger mismatch if the name is auto-generated by IDA
             type_matches = this_arg.type.equals_to(this_tinfo)
             name_is_auto = AUTO_NAME_RE.fullmatch(this_arg.name) is not None
             if not type_matches or name_is_auto:
-                return True
+                return f"'this' parameter ({'type' if not type_matches else 'auto name'})"
 
             funcargs = funcargs[1:]
 
         if needs_retptr and not itanium_abi:
             if not funcargs or not funcargs[0].type.equals_to(expected_rettype) \
                     or not (funcargs[0].flags & FAI_RETPTR):
-                return True
+                return "retptr missing"
             funcargs = funcargs[1:]
 
         arg_types = [arg.type for arg in funcargs]
         if not _params_match(arg_types, binding, strict=True):
-            return True
+            return (
+                f"param types (IDA ({', '.join(str(t) for t in arg_types)}) "
+                f"vs Broma ({', '.join(p.type for p in binding.parameters)}))"
+            )
 
         for ida_arg, param in zip(funcargs, binding.parameters):
-            # pX is Broma auto-generated name, aX is IDA auto-generated name
             if AUTO_NAME_RE.fullmatch(param.name) is None \
                     and ida_arg.name != param.name:
-                return True
+                return f"param name (IDA '{ida_arg.name}' vs Broma '{param.name}')"
 
-        return False
+        return None
 
     def apply(self, ea: int, binding) -> bool:
         """
@@ -347,7 +390,7 @@ class SignatureApplier:
             resolved_ret = resolve_type_tinfo(ret)
             if resolved_ret is None:
                 print(
-                    "[!] IDAUtils: Couldn't resolve return type "
+                    "[!] SignatureApplier: Couldn't resolve return type "
                     f"'{ret.type}' for function at {hex(ea)}!"
                 )
                 return False
@@ -369,7 +412,7 @@ class SignatureApplier:
 
             if this_tinfo is None:
                 print(
-                    "[!] IDAUtils: Couldn't resolve implicit 'this' "
+                    "[!] SignatureApplier: Couldn't resolve implicit 'this' "
                     f"argument ('{binding.class_name}*') for function at {hex(ea)}!"
                 )
                 return False
@@ -382,7 +425,7 @@ class SignatureApplier:
 
             if tinfo is None:
                 print(
-                    "[!] IDAUtils: Couldn't resolve parameter "
+                    "[!] SignatureApplier: Couldn't resolve parameter "
                     f"'{arg.name or arg.type}' ('{arg.type}') for "
                     f"function at {hex(ea)}!"
                 )
@@ -420,8 +463,9 @@ class SignatureApplier:
         func_tinfo = ida_tinfo_t()
         if not func_tinfo.create_func(function_data):
             print(
-                "[!] IDAUtils: Couldn't construct type information "
-                f"for function at {hex(ea)}!"
+                f"[!] SignatureApplier: create_func failed at {ea:#x} "
+                f"(cc {function_data.get_cc():#x}, flags {function_data.flags:#x}): "
+                f"{final_rettype} ({', '.join(f'{type}' for _, type, _ in ordered)})"
             )
             return False
 

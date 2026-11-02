@@ -52,14 +52,35 @@ class PlatformProfile:
     """Profile container for facts about a certain binary platform."""
 
     printable: str
+    """Printable form of the platform name."""
     thunk_sizes: tuple[int, ...]
     clang_args: str
+    """Arguments to use when importing types using the IDA clang parser."""
     stl_dir: str
+    """
+    The directory to include STL headers from inside of
+    `broma_ida/headers/cxx-stl`.
+    """
     itanium_abi: bool
     instruction_alignment: int = 1
+    """
+    The rule of alignment to bytes to apply for this platform for functions.
+    The default is 1 byte.
+    """
     reg_return_sizes: frozenset[int] = frozenset(range(1, 17))
+    """
+    Struct sizes that can be returned in registers on this platform.
+    Used when `ida_typeinf.calc_retloc` can't answer.
+
+    The default is "any type from 1 to 16 bytes",
+    so set this explicitly for any new platform instead of inheriting it.
+    """
 
 
+# adding new platform checklist:
+# - add to BROMA_PLATFORMS
+# - add a branch for it in _detect_platform
+# - add an entry to PLATFORM_PROFILES with the relevant info
 PLATFORM_PROFILES: dict[BROMA_PLATFORMS, PlatformProfile] = {
     "win":          PlatformProfile("Windows", (6, 12), "-target x86_64-pc-win32", "windows", itanium_abi=False, reg_return_sizes=frozenset({1, 2, 4, 8})),
     "imac":         PlatformProfile("Intel MacOS", (12,), "-target x86_64-apple-darwin", "macho", itanium_abi=True),

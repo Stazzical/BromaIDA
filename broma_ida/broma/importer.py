@@ -472,28 +472,38 @@ class BromaImporter:
         # but the risk still remains.
         self._types_before = dirtree.linked_type_names()
 
-    def _post_import_types(self) -> None:
-        """Post-import types hook"""
-        # orphans can't be found by name in the tree, so restore them first
-        if adopted := dirtree.adopt_orphaned_types(til_type_names()):
+    def _post_import_types(self) -> int:
+        """
+        Post-import types hook.
+
+        Returns:
+            int: Number of new types that ended up in the BromaIDA folders.
+        """
+        adopted = dirtree.adopt_orphaned_types(til_type_names())
+        if adopted:
             print(f"[-] BromaImporter: Restored {adopted} types that had lost their dirtree entry.")
 
         unplaced = dirtree.place_types(self._type_folders())
         if unplaced:
             print(
-                f"[-] BromaImporter: {len(unplaced)} Broma classes were not placed "
-                f"in the dirtree (e.g. {unplaced[0]})."
+                f"[-] BromaImporter: {len(unplaced)} of the types were unable to be placed "
+                f"in the Local Types dirtree (e.g. {unplaced[0]})."
             )
 
-        # no snapshot means the import was skipped, so there is nothing new to sweep
+        placed = adopted
+        # no snapshot: the import was skipped, nothing new to sweep
         if self._types_before is not None:
             swept = dirtree.sweep_new_types(self._types_before)
             if swept:
-                print(f"[-] BromaImporter: Moved {swept} non-Broma types to '{dirtree.OTHER_FOLDER}'.")
+                print(f"[+] BromaImporter: Moved {swept} non-Broma types to '{dirtree.OTHER_FOLDER}'.")
+
+            # new types with a dirtree entry (adopted orphans are included here),
+            # minus the ones that were swept out into the "other" folder
+            placed = len(dirtree.linked_type_names() - self._types_before) - swept
 
         self._types_before = None
         resolve_type_tinfo.cache_clear()
-
+        return placed
 
     @staticmethod
     def _verify_types_preimport(defs: STLTypeDefinitions) -> bool:
@@ -655,7 +665,12 @@ class BromaImporter:
                 )
 
             if self.has_types:
-                self._post_import_types()
+                placed = self._post_import_types()
+                if placed:
+                    print(
+                        f"[+] BromaImporter: Placed {placed} new types in "
+                        f"the '{dirtree.ROOT_FOLDER}' dirtree folder."
+                    )
 
         self._load_broma_bindings()
 
@@ -759,7 +774,6 @@ class BromaImporter:
 
         problem = VerifyUtils.verify_types_postimport(self._graph.stl_type_definitions)
         if problem is None:
-            self._post_import_types()
             return True
 
         if not retried and AskPopup(
