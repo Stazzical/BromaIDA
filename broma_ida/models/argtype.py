@@ -1,6 +1,17 @@
 from dataclasses import dataclass, field
+import re
+
+from broma_ida.constants import CPP_TYPE_QUALIFIERS, CPP_TYPE_SPECIFIERS, CPP_PRIMITIVES
 
 from broma_ida.utils import CppUtils, STLNode, STLUtils
+
+
+_NOT_A_NAME = frozenset((*CPP_TYPE_SPECIFIERS, *CPP_TYPE_QUALIFIERS, *CPP_PRIMITIVES))
+"""Keywords that are not part of the name."""
+_NAME_TAIL_RE = re.compile(r"(?<=[\s*&])[A-Za-z_]\w*$")
+"""Find the last word at the tail end of the parameter declaration."""
+_ONLY_DECOR_RE = re.compile(r"\b(?:const|volatile)\b|[*&\s]")
+"""Strip everything from before the last word."""
 
 
 @dataclass
@@ -12,6 +23,7 @@ class ArgType:
     reg: str = ""
 
     expanded_type: str = field(init=False)
+
     _node: "STLNode" = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
@@ -25,6 +37,54 @@ class ArgType:
             )
         else:
             self.expanded_type = self.type
+
+    @classmethod
+    def for_this(cls, class_name: str) -> "ArgType":
+        """
+        The implicit `this` parameter IDA shows
+        for a method of `class_name`.
+        """
+        return cls(f"{class_name}*", "this")
+
+    @classmethod
+    def parse_params(
+        cls,
+        params: str,
+        first_index: int = 0,
+        auto_names: bool = False
+    ) -> tuple[list["ArgType"], bool]:
+        """
+        Converts a string of function parameters into a
+        list of ArgTypes and detect if there is a variadic
+        ellipsis present.
+
+        Args:
+            params (str): The function parameters string.
+            first_index (int, optional): The parameter to
+                start from. Defaults to `0`.
+            auto_names (bool, optional): Generate Broma names
+                for parameters that don't have one.
+                Defaults to `False`.
+
+        Returns:
+            tuple[list["ArgType"], bool]: 'const char* a, int, ...' ->
+                ([ArgType, ArgType], True)
+        """
+        result: list[ArgType] = []
+        tokens, is_variadic = CppUtils.split_params(params)
+
+        for i, token in enumerate(tokens, start=first_index):
+            m = _NAME_TAIL_RE.search(token)
+            if m and m.group() not in _NOT_A_NAME:
+                type_part = token[:m.start()]
+
+                if _ONLY_DECOR_RE.sub("", type_part):
+                    result.append(cls(type_part.rstrip(), m.group()))
+                    continue
+
+            result.append(cls(token, (f"p{i}" if auto_names else "")))
+
+        return result, is_variadic
 
     @property
     def stripped_type(self) -> str:

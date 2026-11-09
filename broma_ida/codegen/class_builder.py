@@ -1,7 +1,7 @@
 from pybroma import Class
 
-from broma_ida.broma.class_graph import ClassGraph
-from broma_ida.broma.constants import BROMA_PLATFORMS
+from broma_ida.codegen.class_graph import ClassGraph
+from broma_ida.constants import BROMA_PLATFORMS
 from broma_ida.utils import CppUtils
 
 

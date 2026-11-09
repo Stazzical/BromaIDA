@@ -1,7 +1,10 @@
-from typing import Final
+from dataclasses import dataclass, field
+from os import PathLike
 from pathlib import Path
 from re import sub, compile
-from dataclasses import dataclass, field
+from typing import Final
+
+from broma_ida.constants import CALLING_CONVENTIONS
 
 
 def path_exists(path: str, ext: str = "") -> bool:
@@ -26,6 +29,50 @@ def path_exists(path: str, ext: str = "") -> bool:
         return p_path.suffix == ext and p_path.exists()
 
 
+def source_key(
+    source: str | PathLike[str],
+    *,
+    base: Path | None = None,
+    external_root: str = "",
+    strip_suffix: bool = False,
+) -> str:
+    """
+    Produce a unique collision-resistant key for a source file.
+
+    - If the file lives under `base`, return the relative path.
+    - Otherwise return the full POSIX path string, or park it under
+     `external_root` if provided using a sanitized absolute path
+     so two different absolute locations can never collide.
+    - Optionally strip the final suffix if `strip_suffix` is `True`.
+    """
+    p = Path(source).resolve()
+
+    rel: Path | None = None
+    if base is not None:
+        try:
+            rel = p.relative_to(base.resolve())
+        except ValueError:
+            pass
+
+    if rel is None:
+        if not external_root:
+            rel = p
+        else:
+            parts = [external_root]
+            # "C:" -> "C", r"\\server\share" -> "server_share"
+            parts.append(sub(r"\W+", "_", p.drive).strip("_"))
+
+            # body after the anchor
+            body = p.relative_to(p.anchor) if p.anchor else p
+            parts.extend(body.parts)
+            rel = Path(*parts)
+
+    if strip_suffix:
+        rel = rel.with_suffix("")
+
+    return rel.as_posix()
+
+
 class CppUtils:
     """General C++ type utilities."""
 
@@ -33,6 +80,13 @@ class CppUtils:
     """MSVC-only elaborated-type keywords."""
 
     _BAD_DECORATOR_RE: Final = compile(r"[*&]\s*<")
+
+    _CALL_CONV_RE: Final = compile(rf"\b(?:{'|'.join(CALLING_CONVENTIONS)})\b")
+
+    _DECL_NOISE_RE: Final = compile(
+        rf"\b(?:{'|'.join((*CALLING_CONVENTIONS, '__noreturn', '__pure'))})\b"
+    )
+    """Everything IDA puts between the return type and the argument list."""
 
     @staticmethod
     def format_ptr(pt: str) -> str:
@@ -67,7 +121,7 @@ class CppUtils:
         - east `const` moved to west position
         - pointer/reference attached to type with no spaces
         - whitespace cleaned up with one space after each
-            templated type argument
+         templated type argument
 
         Args:
             t (str)
@@ -124,6 +178,57 @@ class CppUtils:
         return args
 
     @staticmethod
+    def split_signature(decl: str) -> tuple[str, str, str]:
+        """
+        Splits a function declaration as IDA prints it
+        into its return type, calling convention and argument list.
+        Attributes such as `__noreturn` are dropped,
+        and the calling convention is empty if there is none.
+
+        Returns:
+            tuple[str, str, str]:
+                'unsigned __int64 __fastcall __pure(Foo *this, int (*cb)(int))' ->
+                ('unsigned __int64', '__fastcall', 'Foo *this, int (*cb)(int)')
+        """
+        decl = decl.strip()
+        head, params = decl, ""
+
+        end = decl.rfind(")")
+        if end != -1:
+            depth = 0
+            for i in range(end, -1, -1):
+                if decl[i] == ")":
+                    depth += 1
+                elif decl[i] == "(":
+                    depth -= 1
+                    if depth == 0:
+                        head, params = decl[:i], decl[i + 1:end]
+                        break
+
+        noise = CppUtils._DECL_NOISE_RE.search(head)
+        call_conv = CppUtils._CALL_CONV_RE.search(head)
+
+        return (
+            (head[:noise.start()] if noise else head).strip(),
+            call_conv.group() if call_conv else "",
+            params
+        )
+
+    @staticmethod
+    def split_params(arg_str: str) -> tuple[list[str], bool]:
+        """
+        Splits a function's argument list like `split_top_level`,
+        but takes a trailing '...' out and reports it separately.
+
+        Returns:
+            tuple[list[str], bool]:
+                'int a, char const*, ...' -> (['int a', 'char const*'], True)
+        """
+        args = CppUtils.split_top_level(arg_str)
+        is_variadic = bool(args) and args[-1] == "..."
+        return (args[:-1] if is_variadic else args), is_variadic
+
+    @staticmethod
     def split_qualified(name: str) -> tuple[list[str], str]:
         """
         Splits a qualified C++ method name.
@@ -170,9 +275,28 @@ class STLNode:
     args: list["STLNode"] = field(default_factory=list)
     ptr: str = ""
 
+    @classmethod
+    def parse(cls, type_str: str) -> "STLNode":
+        """Builds a node tree from a raw type string, normalizing it first."""
+        return STLUtils.split_stl_type(CppUtils.normalize_type(type_str))
+
     @property
     def is_stl(self) -> bool:
         return "std::" in self.name
+
+    @property
+    def ida_sanitized(self) -> "STLNode":
+        """Copy of this tree spelled the way IDA sees it (refs as pointers, no `geode::`)."""
+        return STLNode(
+            self.const,
+            CppUtils.to_ida_equivalent(self.name),
+            [a.ida_sanitized for a in self.args],
+            CppUtils.to_ida_equivalent(self.ptr),
+        )
+
+    def __str__(self) -> str:
+        args = f"<{', '.join(map(str, self.args))}>" if self.args else ""
+        return f"{self.const} {self.name}{args}{self.ptr}".lstrip()
 
 
 class STLUtils:
@@ -216,7 +340,7 @@ class STLUtils:
 
         Args:
             stl_t (str): STL type string. Assumed to be
-                normalized first using `STLUtils.normalize_type`.
+                normalized first using `CppUtils.normalize_type`.
 
         Returns:
             STLNode
@@ -235,7 +359,7 @@ class STLUtils:
             stl_t = stl_t[len("const "):].lstrip()
 
         stripped = CppUtils.strip_crp(stl_t)
-        if "std::" not in stl_t or stripped == "std::string":
+        if "std::" not in stl_t or "<" not in stl_t or stripped == "std::string":
             return STLNode(const, stripped, ptr=ptr)
 
         # find the outermost template bracket
@@ -272,7 +396,7 @@ class STLUtils:
 
         Args:
             stl_t (str): Unexpanded STL type. Assumed to be
-                normalized first using `STLUtils.normalize_type`.
+                normalized first using `CppUtils.normalize_type`.
 
         Returns:
             str
@@ -284,8 +408,13 @@ class STLUtils:
             if node.name == "std::string":
                 return f"{node.const} {STLUtils.STL_EXPANSION_MAP['std::string']}{node.ptr}".lstrip()
 
-            template = STLUtils.STL_EXPANSION_MAP[node.name]
             expanded_args = [expand_node(arg) for arg in node.args]
+
+            template = STLUtils.STL_EXPANSION_MAP.get(node.name)
+            if template is None:
+                # no known default template arguments, keep it as written
+                args = f"<{', '.join(expanded_args)}>" if expanded_args else ""
+                return f"{node.const} {node.name}{args}{node.ptr}".lstrip()
 
             return f"{node.const} {template.format(*expanded_args)}{node.ptr}".lstrip()
 
@@ -320,7 +449,7 @@ class STLUtils:
 
         Args:
             raw (str): Raw string of the type. Assumed to be
-                normalized first using `STLUtils.normalize_type`.
+                normalized first using `CppUtils.normalize_type`.
 
         Returns:
             list[tuple[str, bool]]: [(stripped_leaf_type, is_by_value), ...]

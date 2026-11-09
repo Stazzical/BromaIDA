@@ -1,5 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
+
+from broma_ida.ida.parser import new_clang_is_optional
 
 
 @dataclass(frozen=True, slots=True)
@@ -9,6 +11,7 @@ class SettingDefinition:
     default: Any
     label: str          # settings form option name
     tooltip: str = ""   # settings form tooltip that shows when you hover over the option
+    available: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,7 +22,7 @@ class SettingsGroup:
 
 
 # this dynamically populates SettingsForm
-SETTINGS_GROUPS: tuple[SettingsGroup, ...] = (
+_GROUPS: tuple[SettingsGroup, ...] = (
     SettingsGroup(
         title="General Settings",
         control_name="cGeneralSettingsGroup",
@@ -53,6 +56,17 @@ SETTINGS_GROUPS: tuple[SettingsGroup, ...] = (
                 "binary's target platform, and compared to any previously "
                 "saved file hashes;\nif identical, BromaIDA will "
                 "skip importing types.",
+            ),
+            SettingDefinition(
+                "snapshot_before_import",
+                "rSnapshotBeforeImport",
+                False,
+                "Take Database Snapshot Before Import",
+                "Takes an IDA database snapshot before BromaIDA changes the IDB,\nso the "
+                "import can be rolled back from the Database Snapshot Manager.\n\n"
+                "Taken automatically on the first import into an IDB;\nfor IDBs BromaIDA "
+                "has already imported into before, you are prompted each time.\n\n"
+                "Snapshots take disk space, which can add up on large IDBs.",
             ),
             SettingDefinition(
                 "export_return_types",
@@ -125,10 +139,25 @@ SETTINGS_GROUPS: tuple[SettingsGroup, ...] = (
                 "previously imported types.\nOverwriting types may "
                 "potentially silently fail.",
             ),
+            SettingDefinition(
+                "use_new_clang",
+                "rUseNewClang",
+                False,
+                "Use New Clang Parser (Experimental)",
+                "Imports types with IDA's new LibTooling-based clang parser "
+                "instead of IDAClang.\nParse errors are reported instead of "
+                "crashing IDA,\nwhich helps with debugging bad headers.\n\n"
+                "IDAClang is removed in IDA v9.5, where this parser is always used.",
+                available=new_clang_is_optional(),
+            ),
         ),
     ),
 )
 
+SETTINGS_GROUPS = tuple(
+    replace(g, settings=tuple(s for s in g.settings if s.available))
+    for g in _GROUPS
+)
 ALL_SETTINGS: tuple[SettingDefinition, ...] = tuple(
     s for g in SETTINGS_GROUPS for s in g.settings
 )

@@ -1324,12 +1324,14 @@ namespace cocos2d
 	class CCArray;
 	class CCNode;
 	class CCEvent;
+
 	typedef struct _ccArray {
 		unsigned int num, max;
 		// 2.2 additions
 		unsigned int unknown;
 		CCObject** arr;
 	} ccArray;
+
 	typedef struct _ccCArray {
 		unsigned int num, max;
 		// 2.2 additions
@@ -1376,6 +1378,7 @@ namespace cocos2d
 	class CCString;
 	class CCDictionary;
 	class CCSet;
+
 	class CCDataVisitor
 	{
 	public:
@@ -1479,6 +1482,7 @@ namespace cocos2d
 	private:
 		bool m_bValue;
 	};
+
 	class CCInteger : public CCObject
 	{
 	public:
@@ -1499,6 +1503,7 @@ namespace cocos2d
 	private:
 		int m_nValue;
 	};
+
 	class CCFloat : public CCObject
 	{
 	public:
@@ -1521,6 +1526,7 @@ namespace cocos2d
 	private:
 		float m_fValue;
 	};
+
 	class CCDouble : public CCObject
 	{
 	public:
@@ -1543,7 +1549,9 @@ namespace cocos2d
 	private:
 		double m_dValue;
 	};
+
 	#define kMaxStringLen (1024*100)
+
 	class CCString : public CCObject
 	{
 	public:
@@ -1586,7 +1594,9 @@ namespace cocos2d
 	public:
 		std::string m_sString;
 	};
+
 	typedef std::set<CCObject*>::iterator CCSetIterator;
+
 	class CCSet : public CCObject
 	{
 	public:
